@@ -19,22 +19,23 @@ import numpy
 ```
 # Requirement
  
-* Python 3.x
+* Python 3.7
 * NetworkX 
+* Numpy 
  
 graphnet-automata has been tested under [Anaconda for Windows](https://www.anaconda.com/distribution/) and [Google Colaboratory](https://colab.research.google.com/).
  
 ```bash
-conda create -n pyxel pip python=3.6 Anaconda
-activate pyxel
+conda create -n graphnet-automata pip python=3.7 Anaconda
+activate graphnet-automata
 ```
  
 # Installation
  
-Install Pyxel with pip command.
+Install NetworkX with pip command.
  
 ```bash
-pip install pyxel
+pip install networkx
 ```
  
 # Usage
@@ -50,18 +51,13 @@ python demo.py
  
 # Note
  
-I don't test environments under Linux and Mac.
+Linux and macOS environments have not yet been tested.
  
 # Author
  
-* Hayabusa
-* R&D Center
-* Twitter : https://twitter.com/Cpp_Learning
+* Masakazu Yamagiwa
+* Email : myamagiwa@gmail.com
  
 # License
  
 "Physics_Sim_Py" is under [MIT license](https://en.wikipedia.org/wiki/MIT_License).
- 
-Enjoy making cute physics simulations!
- 
-Thank you!
