@@ -1,6 +1,5 @@
 # graphnet-automata
-A study of the evolution of graphs using cellular automaton-like methods.  This study was inspired by the recent announcement from Wolfram concerning his work on graph automata.
-Physics_Sim_Py" is a tutorial of physics simulations with Python.
+"graphnet-automata" is a study of the evolution of graphs using cellular automaton-like methods, written in Python.  This study was inspired by the recent announcement from Wolfram concerning his work on graph automata.
  
 # DEMO
  
@@ -13,20 +12,17 @@ You can get basic skills for making physics simulations.
  
 # Features
  
-Physics_Sim_Py used [pyxel](https://github.com/kitao/pyxel) only.
- 
+graphnet-automata uses [NetworkX](https://networkx.github.io/) and Numpy.
 ```python
-import pyxel
+import networkx
+import numpy
 ```
-[Pyxel](https://github.com/kitao/pyxel) is a retro game engine for Python.
-You can feel free to enjoy making pixel art style physics simulations.
- 
 # Requirement
  
-* Python 3.6.5
-* pyxel 1.0.2
+* Python 3.x
+* NetworkX 
  
-Environments under [Anaconda for Windows](https://www.anaconda.com/distribution/) is tested.
+graphnet-automata has been tested under [Anaconda for Windows](https://www.anaconda.com/distribution/) and [Google Colaboratory](https://colab.research.google.com/).
  
 ```bash
 conda create -n pyxel pip python=3.6 Anaconda
