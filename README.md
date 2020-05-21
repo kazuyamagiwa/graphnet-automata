@@ -21,7 +21,9 @@ import numpy
  
 * Python 3.7
 * NetworkX 
-* Numpy 
+* Numpy
+* Numba
+* python-louvain (for "community" module)
  
 graphnet-automata has been tested under [Anaconda for Windows](https://www.anaconda.com/distribution/) and [Google Colaboratory](https://colab.research.google.com/).
  
@@ -36,6 +38,7 @@ Install NetworkX with pip command.
  
 ```bash
 pip install networkx
+pip install python-louvain
 ```
  
 # Usage
