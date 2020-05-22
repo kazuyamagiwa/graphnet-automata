@@ -3,7 +3,7 @@
  
 # Premise
  
-Starting from a undirected graph with a few nodes (a "seed graph"), graphnet-automata manipulates its node connections, as represented as a matrix, by first padding the matrix by one layer (adding two new nodes).  Depending on the number of neighboring node connections, the matrix is updated, much like in a cellular automaton.  This is repeated in a recursive fashion (i.e. "evolved"), and the resulting matrix is converted into a graph.  To further characterize the graph, a community detection method is employed to visualize the number of communities that have formed.
+Starting from a undirected graph with a few nodes (a "seed graph"), graphnet-automata manipulates its node connections, represented as a matrix, by first padding the matrix with one layer (adding two new nodes).  Depending on the number of neighboring node connections, the matrix is updated, much like in a cellular automaton.  This is repeated in a recursive fashion (i.e. "evolved"), and the resulting matrix is converted into a graph.  To further characterize the graph, a community detection method is employed to visualize the number of communities that have formed.
 
 For example, a seed graph of three nodes
 
@@ -51,7 +51,7 @@ pip install python-louvain
  
 # Usage
  
-Please view the Jupyter Notebooks in this repository.  Note that the recursive calculations may take several minutes, depending on your environment.  Work on a python file (.py) is under way.
+Please view the Jupyter Notebooks in this repository.  Note that the recursive calculations may take a minute or so, depending on your environment.  Work on a python file (.py) is under way.
  
 # Note
  
