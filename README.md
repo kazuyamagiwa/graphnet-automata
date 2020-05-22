@@ -3,54 +3,55 @@
  
 # Premise
  
-You can learn how to making cute physics simulations (looks retro game).
+Starting from a undirected graph with a few nodes (a "seed graph"), graphnet-automata manipulates its node connections, as represented as a matrix, by first padding the matrix by one layer (adding two new nodes).  Depending on the number of neighboring node connections, the matrix is updated, much like in a cellular automaton.  This is repeated in a recursive fashion (i.e. "evolved"), and the resulting matrix is converted into a graph.  To further characterize the graph, a community detection method is employed to visualize the number of communities that have formed.
+
+For example, a seed graph of three nodes
+
+![](https://github.com/kazuyamagiwa/graphnet-automata/blob/master/images/g1_0.png)
  
-![](https://cpp-learning.com/wp-content/uploads/2019/05/pyxel-190505-161951.gif)
+ evolves into a graph that is distinctly separated into two communities.
  
-This animation is a "Cat playing on trampoline"!
-You can get basic skills for making physics simulations.
+![](https://github.com/kazuyamagiwa/graphnet-automata/blob/master/images/g1_100_community.png)
+
+Initial experiments have shown that the evolved graph shows a "bonding" or "anti-bonding" graph, depending on whether the number of nodes in the seed graph are odd or even.  See the [notebook "ga01.ipynb"](https://github.com/kazuyamagiwa/graphnet-automata/blob/master/ga01.ipynb) for details.
  
 # Features
  
-graphnet-automata uses [NetworkX](https://networkx.github.io/) and Numpy.
+graphnet-automata uses [NetworkX](https://networkx.github.io/), [NumPy](https://numpy.org/), [Numba](http://numba.pydata.org/) and [python-louvain](https://github.com/taynaud/python-louvain).
 ```python
 import networkx
 import numpy
+from numba import jit
+import community
 ```
 # Requirement
  
-* Python 3.7
-* NetworkX 
-* Numpy
-* Numba
-* python-louvain (for "community" module)
+* Python 3.6.9
+* NetworkX 2.2
+* NumPy 1.16.4
+* Numba 0.45.1
+* python-louvain 0.14 (for "community" library)
  
 graphnet-automata has been tested under [Anaconda for Windows](https://www.anaconda.com/distribution/) and [Google Colaboratory](https://colab.research.google.com/).
  
 ```bash
-conda create -n graphnet-automata pip python=3.7 Anaconda
+conda create -n graphnet-automata pip python=3.6.9 Anaconda
 activate graphnet-automata
 ```
  
 # Installation
  
-Install NetworkX with pip command.
+Install NetworkX, Numba, and python-louvain with pip command.
  
 ```bash
 pip install networkx
+pip install numba (for x86/x86_64 platforms)
 pip install python-louvain
 ```
  
 # Usage
  
-Please create python code named "demo.py".
-And copy &amp; paste [Day4 tutorial code](https://cpp-learning.com/pyxel_physical_sim4/).
- 
-Run "demo.py"
- 
-```bash
-python demo.py
-```
+Please view the Jupyter Notebooks in this repository.  Note that the recursive calculations may take several minutes, depending on your environment.  Work on a python file (.py) is under way.
  
 # Note
  
@@ -63,4 +64,4 @@ Linux and macOS environments have not yet been tested.
  
 # License
  
-"Physics_Sim_Py" is under [MIT license](https://en.wikipedia.org/wiki/MIT_License).
+"graphnet-automata" is under [MIT license](https://en.wikipedia.org/wiki/MIT_License).
