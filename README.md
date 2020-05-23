@@ -17,6 +17,8 @@ Initial experiments have shown that the evolved graph shows a "bonding" or "anti
 
 ![](https://github.com/kazuyamagiwa/graphnet-automata/blob/master/images/g2_0.png)
 
+evolves into:
+
 ![](https://github.com/kazuyamagiwa/graphnet-automata/blob/master/images/g2_100_community.png)
 
 See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/tree/master/notebooks) for details.
