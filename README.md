@@ -13,7 +13,13 @@ For example, a seed graph of three nodes
  
 ![](https://github.com/kazuyamagiwa/graphnet-automata/blob/master/images/g1_100_community.png)
 
-Initial experiments have shown that the evolved graph shows a "bonding" or "anti-bonding" graph, depending on whether the number of nodes in the seed graph are odd or even.  See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/tree/master/notebooks) for details.
+Initial experiments have shown that the evolved graph shows a "bonding" or "anti-bonding" graph, depending on whether the number of nodes in the seed graph are odd or even.  like so:
+
+![](https://github.com/kazuyamagiwa/graphnet-automata/blob/master/images/g2_0.png)
+
+![](https://github.com/kazuyamagiwa/graphnet-automata/blob/master/images/g2_100_community.png)
+
+See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/tree/master/notebooks) for details.
  
 # Features
  
