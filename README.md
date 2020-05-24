@@ -25,12 +25,13 @@ See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/t
  
 # Features
  
-graphnet-automata uses [NetworkX](https://networkx.github.io/), [NumPy](https://numpy.org/), [Numba](http://numba.pydata.org/) and [python-louvain](https://github.com/taynaud/python-louvain).
+graphnet-automata uses [NetworkX](https://networkx.github.io/), [NumPy](https://numpy.org/), [Numba](http://numba.pydata.org/), [python-louvain](https://github.com/taynaud/python-louvain) and [Matplotlib](https://matplotlib.org/).
 ```python
 import networkx
 import numpy
 from numba import jit
 import community
+import matplotlib.pyplot
 ```
 # Requirement
  
@@ -39,6 +40,7 @@ import community
 * NumPy 1.16.4
 * Numba 0.45.1
 * python-louvain 0.14 (for "community" library)
+* Matplotlib 3.1.0
  
 graphnet-automata has been tested under [Anaconda for Windows](https://www.anaconda.com/distribution/) and [Google Colaboratory](https://colab.research.google.com/).
  
