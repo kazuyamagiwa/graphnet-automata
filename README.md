@@ -21,6 +21,10 @@ evolves into:
 
 ![](https://github.com/kazuyamagiwa/graphnet-automata/blob/master/images/g2_100_community.png)
 
+Other novel structures found so far include a whip-like structure:
+
+![](https://github.com/kazuyamagiwa/graphnet-automata/blob/master/images/ga02_g1_100_community.png)
+
 See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/tree/master/notebooks) for details.
  
 # Features
