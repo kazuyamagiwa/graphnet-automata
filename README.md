@@ -1,5 +1,9 @@
 # graphnet-automata
-"graphnet-automata" is a study of the evolution of graphs using cellular automaton-like methods, written in Python.  This study was inspired by the [recent announcement](https://writings.stephenwolfram.com/2020/04/finally-we-may-have-a-path-to-the-fundamental-theory-of-physics-and-its-beautiful/) from Wolfram concerning his [project to find the fundamental theory of physics](https://www.wolframphysics.org/).  Although graphnet-automata's approach is not as elegant, it involves the conversion of "seed graphs" to matrices for manipulation using cellular automaton-like methods. 
+"graphnet-automata" is a study of the evolution of graphs using cellular automaton-like methods, written in Python.
+
+![](https://github.com/kazuyamagiwa/graphnet-automata/blob/master/images/ga02_g1_100_community.png)
+
+This study was inspired by the [recent announcement](https://writings.stephenwolfram.com/2020/04/finally-we-may-have-a-path-to-the-fundamental-theory-of-physics-and-its-beautiful/) from Wolfram concerning his [project to find the fundamental theory of physics](https://www.wolframphysics.org/).  Although graphnet-automata's approach is not as elegant, it involves the conversion of "seed graphs" to matrices for manipulation using cellular automaton-like methods. 
  
 # Premise
  
