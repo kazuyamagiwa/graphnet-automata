@@ -1,99 +1,50 @@
-#!/usr/bin/env python
-# coding: utf-8
-
 import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
-from functools import lru_cache
-from numba import jit
 import community
+import scipy.ndimage as nd
+import collections
 
 import warnings; warnings.simplefilter('ignore')
 
-@jit(nopython = True)
-def generator(A):
-    B = np.zeros((len(A)+2, len(A)+2), np.int_)
-    B[1:-1,1:-1] = A
-    for i in range(len(B)):
-        for j in range(len(B)):
-            count = 0
-            count += B[i][j]
-            if i-1 > 0:
-                count += B[i-1][j]
-            if i+1 < len(B):
-                count += B[i+1][j]
-            if j-1 > 0:
-                count += B[i][j-1]
-            if j+1 < len(B):
-                count += B[i][j+1]
-            if count == 0:
-                B[i][j] = 1
-            if count > 4:
-                B[i][j] = 1
-            if count <= 4 and count > 0:
-                B[i][j] = 0
-    Bnext = np.zeros_like(B, np.int_)
-    Bnext = np.triu(B,1) + B.T - np.diag(np.diag(B))
-    for i in range(len(Bnext)):
-      for j in range(len(Bnext)):
-        if Bnext[i][j] > 1:
-          Bnext[i][j] = 1
-    return(Bnext)
+KERNEL = np.array([[1, 1, 0],
+                   [0, 1, 0],
+                   [1, 0, 0]], dtype=np.uint8)
 
-try:
-    from functools import lru_cache
-except ImportError:
-    from backports.functools_lru_cache import lru_cache
+# use of convolution, courtesy of salt-die
+class generator_state:
+    seed = nx.to_numpy_matrix(nx.erdos_renyi_graph(13, 0.05, seed = 1, directed=True))
+    
+    def next_state(self):
+        seed = self.seed
+        seed = np.pad(seed, (1, 1), 'constant')
+        neighbor_count = nd.convolve(seed, KERNEL, mode="constant")
+        self.seed = np.where(((seed == 0) & (neighbor_count > 0) & (neighbor_count <= 4)) |
+                                 ((seed == 1) & (neighbor_count > 4)), 1, 0)
+        return(self.seed)
+    
+    def run(self):
+        while True:
+            for _ in range(300):
+                self.next_state()
+            return(self.seed)
 
-def generator2(A_, number):
-  time = 0
-  while time < number:
-    A_ = generator(A_)
-    time += 1
-  return A_
+gen = generator_state()
+gen_g1 = nx.from_numpy_matrix(gen.run())
 
-g1 = nx.erdos_renyi_graph(3, 0.8)
-A1 = nx.to_numpy_matrix(g1)
-print(A1)
-nx.draw(g1, node_size=150, alpha=0.5, with_labels=True, font_weight = 'bold')
-plt.savefig('g1_0.png')
-#plt.show()
+G = gen_g1
 
-gen_A1 = generator2(A1, 100)
-gen_g1 = nx.from_numpy_matrix(gen_A1)
-nx.draw(gen_g1, node_size=10, alpha=0.5)
-plt.savefig('g1_100.png')
-#plt.show()
+degree_sequence = sorted([d for n, d in gen_g1.degree()], reverse=True)
+degreeCount = collections.Counter(degree_sequence)
+deg, cnt = zip(*degreeCount.items())
 
-partition = community.best_partition(gen_g1)
-pos = nx.spring_layout(gen_g1)
-plt.figure(figsize=(8, 8))
-plt.axis('off')
-nx.draw_networkx_nodes(gen_g1, pos, node_size=10, cmap=plt.cm.RdYlBu, node_color=list(partition.values()))
-nx.draw_networkx_edges(gen_g1, pos, alpha=0.3)
-plt.savefig('g1_100_community.png')
-#plt.show(gen_g1)
+fig, ax = plt.subplots()
+plt.bar(deg, cnt, width=0.80, color='b')
 
-g2 = nx.erdos_renyi_graph(4, 0.8)
-A2 = nx.to_numpy_matrix(g2)
-print(A2)
-nx.draw(g2, node_size=150, alpha=0.5, with_labels=True, font_weight = 'bold')
-plt.savefig('g2_0.png')
-#plt.show()
+plt.title("Degree Histogram")
+plt.ylabel("Count")
+plt.xlabel("Degree")
+ax.set_xticks([d + 0.4 for d in deg])
+ax.set_xticklabels(deg)
 
-gen_A2 = generator2(A2, 100)
-gen_g2 = nx.from_numpy_matrix(gen_A2)
-nx.draw(gen_g2, node_size=10, alpha=0.5)
-plt.savefig('g2_100.png')
-#plt.show()
-
-partition = community.best_partition(gen_g2)
-pos = nx.spring_layout(gen_g2)
-plt.figure(figsize=(8, 8))
-plt.axis('off')
-nx.draw_networkx_nodes(gen_g2, pos, node_size=10, cmap=plt.cm.RdYlBu, node_color=list(partition.values()))
-nx.draw_networkx_edges(gen_g2, pos, alpha=0.3)
-plt.savefig('g2_100_community.png')
-#plt.show(gen_g2)
-
-
+plt.show()
