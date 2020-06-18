@@ -1,3 +1,4 @@
+#%%
 import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,10 +8,11 @@ import collections
 
 import warnings; warnings.simplefilter('ignore')
 
-KERNEL = np.array([[1, 1, 0],
-                   [0, 1, 0],
-                   [1, 0, 0]], dtype=np.uint8)
+#%%
+KERNEL = np.zeros(9, dtype=np.uint8).reshape((3,3))
+#print(KERNEL)
 
+#%%
 # use of convolution, courtesy of salt-die
 class generator_state:
     seed = nx.to_numpy_matrix(nx.erdos_renyi_graph(13, 0.05, seed = 1, directed=True))
@@ -29,22 +31,35 @@ class generator_state:
                 self.next_state()
             return(self.seed)
 
-gen = generator_state()
-gen_g1 = nx.from_numpy_matrix(gen.run())
 
-G = gen_g1
+#%%
+for i in range(0, 512, 1):
+    print(i)
 
-degree_sequence = sorted([d for n, d in gen_g1.degree()], reverse=True)
-degreeCount = collections.Counter(degree_sequence)
-deg, cnt = zip(*degreeCount.items())
+    kernel_seed = f'{i:09b}'
+    KERNEL = np.array(list(kernel_seed), dtype=np.uint8).reshape((3,3))
 
-fig, ax = plt.subplots()
-plt.bar(deg, cnt, width=0.80, color='b')
+    gen = generator_state()
+    gen_g1 = nx.from_numpy_matrix(gen.run())
 
-plt.title("Degree Histogram")
-plt.ylabel("Count")
-plt.xlabel("Degree")
-ax.set_xticks([d + 0.4 for d in deg])
-ax.set_xticklabels(deg)
+    degree_sequence = sorted([d for n, d in gen_g1.degree()], reverse=True)
+    degreeCount = collections.Counter(degree_sequence)
+    deg, cnt = zip(*degreeCount.items())
 
-plt.show()
+    if np.average(cnt) > 10:
+        print('hit')
+        fig, ax = plt.subplots()
+        plt.bar(deg, cnt, width=0.80, color='b')
+        plt.title("Degree Histogram")
+        plt.ylabel("Count")
+        plt.xlabel("Degree")
+        ax.set_xticks([d + 0.4 for d in deg])
+        ax.set_xticklabels(deg)       
+        # draw graph in inset
+        plt.axes([0.4, 0.4, 0.5, 0.5])
+        Gcc = gen_g1.subgraph(sorted(nx.connected_components(gen_g1), key=len, reverse=True)[0])
+        pos = nx.spring_layout(gen_g1)
+        plt.axis('off')
+        nx.draw_networkx_nodes(gen_g1, pos, node_size=20)
+        nx.draw_networkx_edges(gen_g1, pos, alpha=0.4)
+        plt.savefig('%s_degree_historgram.png' % i)
