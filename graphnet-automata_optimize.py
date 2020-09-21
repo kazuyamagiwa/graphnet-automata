@@ -34,7 +34,7 @@ class generator_state():
     
     def run(self):
         while True:
-            for _ in range(100):
+            for _ in range(300):
                 self.next_state()
             return(self.seed)
 
@@ -95,7 +95,7 @@ def objective(trial):
 study = optuna.create_study()
 
 # %%
-study.optimize(objective, n_trials=50)
+study.optimize(objective, n_trials=100)
 
 # %%
 best_para = study.best_params
@@ -106,5 +106,18 @@ with open('optimized.txt', 'w') as f:
     print(best_val, file = f)
 
 f.close()
+
+# %%
+
+x = [trial.params['node_num'] for trial in study.trials]
+y = [trial.params['prob_num'] for trial in study.trials]
+z = [trial.value for trial in study.trials]
+
+f, ax = plt.subplots(1,2, sharex=True, sharey=True)
+ax[0].tripcolor(x,y,z)
+ax[1].tricontourf(x,y,z, 20)
+ax[1].plot(x,y, 'ko ')
+ax[0].plot(x,y, 'ko ')
+plt.savefig('contour.png')
 
 # %%

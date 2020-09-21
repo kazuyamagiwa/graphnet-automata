@@ -80,4 +80,4 @@ for i in range(0, 512, 1):
         plt.axis('off')
         nx.draw_networkx_nodes(gen_g1, pos, node_size=20)
         nx.draw_networkx_edges(gen_g1, pos, alpha=0.4)
-        plt.savefig('%s_degree_historgram.png' % i)
+        plt.savefig('%s_degree_histogram.png' % i)
