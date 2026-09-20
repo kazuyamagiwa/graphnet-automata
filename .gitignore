@@ -16,6 +16,10 @@ wheels/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+
+# Sphinx / Read the Docs
+docs/_build/
+docs/autosummary/
 *.png
 !images/*.png
 optimized.txt
