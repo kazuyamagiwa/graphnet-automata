@@ -30,7 +30,7 @@ Other novel structures found so far include a whip-like structure:
 
 ![](https://github.com/kazuyamagiwa/graphnet-automata/blob/master/images/ga02_g1_100_community.png)
 
-See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/tree/master/notebooks) for details.
+See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/tree/master/notebooks) for details. Pre-NetworkX-3 snapshots are frozen under [`notebooks/archive/`](https://github.com/kazuyamagiwa/graphnet-automata/tree/master/notebooks/archive).
 
 ## Project layout
 
@@ -38,7 +38,8 @@ See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/t
 .
 ├── data/                      # Generated HDF5 datasets
 ├── images/                    # Example figures
-├── notebooks/                 # Exploratory Jupyter notebooks
+├── notebooks/                 # Active notebooks (NetworkX 3+)
+│   └── archive/               # Frozen NetworkX 2-era snapshots
 ├── src/graphnet_automata/     # Installable package (uv src layout)
 │   ├── generator.py           # Shared automaton core
 │   ├── degree.py              # Degree-count kernel search
