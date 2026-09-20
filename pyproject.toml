@@ -1,0 +1,44 @@
+[project]
+name = "graphnet-automata"
+version = "0.1.0"
+description = "Study of graph evolution using cellular automaton-like methods"
+readme = "README.md"
+authors = [
+    { name = "Masakazu Yamagiwa", email = "myamagiwa@gmail.com" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "h5py>=3.10",
+    "matplotlib>=3.8",
+    "networkx>=3.2",
+    "numba>=0.59",
+    "numpy>=1.26",
+    "optuna>=3.6",
+    "python-louvain>=0.16",
+    "scipy>=1.12",
+]
+
+[project.optional-dependencies]
+viz = [
+    "pyvis>=0.3.2",
+]
+dev = [
+    "ipykernel>=6.29",
+    "jupyter>=1.0",
+    "pytest>=8.0",
+]
+
+[project.scripts]
+graphnet-automata = "graphnet_automata:main"
+graphnet-automata-degree = "graphnet_automata.degree:main"
+graphnet-automata-generate = "graphnet_automata.generate:main"
+graphnet-automata-optimize = "graphnet_automata.optimize:main"
+graphnet-automata-search = "graphnet_automata.search:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
