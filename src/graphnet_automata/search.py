@@ -1,4 +1,12 @@
-"""Search kernels with low degree-distribution entropy."""
+"""Find kernels that produce low degree-distribution entropy.
+
+Entropy is computed on the normalized histogram of *non-zero* degrees.
+Low entropy means the degree mass is concentrated on few values, which is a
+useful proxy for ordered / regular structure.
+
+Graphs that are mostly edgeless are rejected by assigning a large sentinel
+entropy (``100``) so they do not look artificially "ordered".
+"""
 
 from __future__ import annotations
 
@@ -13,23 +21,45 @@ from graphnet_automata.generator import GeneratorState, kernel_from_index
 
 
 def degree_entropy(graph: nx.Graph) -> tuple[float, list[int], list[int]]:
-    """Return entropy of the non-zero degree distribution, plus full hist data."""
+    """Score a graph's degree histogram and return plotting data.
+
+    Parameters
+    ----------
+    graph:
+        Evolved NetworkX graph.
+
+    Returns
+    -------
+    ent:
+        Shannon entropy of the non-zero degree distribution, or ``100.0`` when
+        the graph is filtered out as too sparse / empty.
+    deg_init:
+        Degree values from the full histogram (including degree 0).
+    cnt_init:
+        Matching counts for ``deg_init``.
+    """
     degree_sequence = sorted((d for _, d in graph.degree()), reverse=True)
     degree_count = collections.Counter(degree_sequence)
     degree_count_init = collections.Counter(degree_sequence)
     deg_init, cnt_init = zip(*degree_count_init.items())
+
+    # Fraction of nodes in the lowest-degree bin of the sorted histogram.
+    # Because the sequence is reverse-sorted, the last bin is the smallest
+    # degree present (often 0).
     cnt_avg_init_0 = cnt_init[-1] / sum(cnt_init)
 
-    del degree_count[0]  # exclude graphs with zero edges
+    # Work on a copy of the counts that excludes isolated / zero-degree mass.
+    del degree_count[0]
 
     if deg_init[-1] == 0 and cnt_avg_init_0 > 0.10:
-        # Exclude graphs with edge-less nodes over 10%
+        # Too many edge-less nodes: treat as uninteresting for this search.
         ent = 100.0
     elif len(degree_count) > 0:
         _, cnt = zip(*degree_count.items())
         cnt_avg = [cnt[i] / sum(cnt) for i in range(len(cnt))]
         ent = float(entropy(cnt_avg))
     else:
+        # No non-zero degrees remain after filtering.
         ent = 100.0
 
     return ent, list(deg_init), list(cnt_init)
@@ -42,6 +72,17 @@ def main(
     entropy_threshold: float = 2.0,
     output_dir: str | Path = ".",
 ) -> None:
+    """Sweep kernels and save histograms for low-entropy hits.
+
+    Parameters
+    ----------
+    nodes, prob, steps:
+        Seed-graph and evolution settings.
+    entropy_threshold:
+        Save a figure when :func:`degree_entropy` returns a value below this.
+    output_dir:
+        Destination directory for histogram PNGs.
+    """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -61,6 +102,8 @@ def main(
             plt.xlabel("Degree")
             ax.set_xticks([d + 0.4 for d in deg_init])
             ax.set_xticklabels(deg_init)
+
+            # Inset graph drawing for quick visual inspection.
             plt.axes([0.4, 0.4, 0.5, 0.5])
             pos = nx.spring_layout(gen_g1)
             plt.axis("off")

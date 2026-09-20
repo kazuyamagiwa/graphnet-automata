@@ -37,6 +37,7 @@ See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/t
 ```text
 .
 ├── data/                      # Generated HDF5 datasets
+├── docs/                      # Sphinx / Read the Docs sources
 ├── images/                    # Example figures
 ├── notebooks/                 # Active notebooks (NetworkX 3+)
 │   └── archive/               # Frozen NetworkX 2-era snapshots
@@ -95,6 +96,18 @@ adjacency = gen.run()
 ```
 
 Exploratory work remains in the Jupyter notebooks under `notebooks/`. Recursive calculations may take a minute or more depending on your environment.
+
+## Documentation
+
+Sphinx docs (Read the Docs theme) live in `docs/`. Build locally:
+
+```bash
+uv sync --extra docs
+uv run sphinx-build -b html docs docs/_build/html
+```
+
+The repo includes `.readthedocs.yaml` so the same site can be published on
+[Read the Docs](https://readthedocs.org/) by importing this GitHub repository.
 
 ## Development
 
