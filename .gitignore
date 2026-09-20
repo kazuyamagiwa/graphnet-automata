@@ -1,2 +1,24 @@
-.ipynb_checkpoints/ 
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
 
+# Virtual environments
+.venv
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Tooling / OS
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.png
+!images/*.png
+optimized.txt
+contour.png
+*_degree_histogram.png
+*_degree_historgram.png
