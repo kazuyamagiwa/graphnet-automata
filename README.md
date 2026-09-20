@@ -2,6 +2,8 @@
 
 Study of graph evolution using cellular automaton-like methods, packaged as a modern [uv](https://docs.astral.sh/uv/) Python project.
 
+**Documentation:** [https://graphnet-automata.readthedocs.io/](https://graphnet-automata.readthedocs.io/)
+
 ![](https://github.com/kazuyamagiwa/graphnet-automata/blob/master/images/ga02_g1_100_community.png)
 
 This study was inspired by the [recent announcement](https://writings.stephenwolfram.com/2020/04/finally-we-may-have-a-path-to-the-fundamental-theory-of-physics-and-its-beautiful/) from Wolfram concerning his [project to find the fundamental theory of physics](https://www.wolframphysics.org/). Although graphnet-automata's approach is not as elegant, it involves the conversion of "seed graphs" to matrices for manipulation using cellular automaton-like methods.
@@ -99,15 +101,14 @@ Exploratory work remains in the Jupyter notebooks under `notebooks/`. Recursive 
 
 ## Documentation
 
-Sphinx docs (Read the Docs theme) live in `docs/`. Build locally:
+Hosted docs: [https://graphnet-automata.readthedocs.io/](https://graphnet-automata.readthedocs.io/)
+
+Sphinx sources live in `docs/`. Build locally:
 
 ```bash
 uv sync --extra docs
 uv run sphinx-build -b html docs docs/_build/html
 ```
-
-The repo includes `.readthedocs.yaml` so the same site can be published on
-[Read the Docs](https://readthedocs.org/) by importing this GitHub repository.
 
 ## Development
 
