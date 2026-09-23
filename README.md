@@ -1,3 +1,13 @@
+# Try the demo online
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kazuyamagiwa/graphnet-automata/blob/master/notebooks/ga01-odd-even-seed-bonding-communities.ipynb)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/kazuyamagiwa/graphnet-automata/HEAD)
+[![Documentation Status](https://readthedocs.org/projects/graphnet-automata/badge/?version=latest)](https://graphnet-automata.readthedocs.io/en/latest/?badge=latest)
+
+- **Colab** — open the starter notebook in Google Colab
+- **Binder** — launch a temporary JupyterLab session from this repo
+- **Streamlit** — local/web UI over the Python package (see below)
+
 # graphnet-automata
 
 Study of graph evolution using cellular automaton-like methods, packaged as a modern [uv](https://docs.astral.sh/uv/) Python project.
@@ -38,6 +48,7 @@ See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/t
 
 ```text
 .
+├── app.py                     # Streamlit interactive demo
 ├── data/                      # Generated HDF5 datasets
 ├── docs/                      # Sphinx / Read the Docs sources
 ├── images/                    # Example figures
@@ -49,6 +60,7 @@ See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/t
 │   ├── generate.py            # Dataset generation
 │   ├── optimize.py            # Optuna seed optimization
 │   └── search.py              # Entropy-based kernel search
+├── requirements.txt           # Streamlit Cloud / Binder install list
 ├── tests/
 ├── pyproject.toml
 └── .python-version
@@ -69,11 +81,24 @@ Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then from
 uv sync
 ```
 
-For notebooks / optional visualization extras:
+Optional extras:
 
 ```bash
-uv sync --extra dev --extra viz
+uv sync --extra dev --extra viz   # notebooks / pyvis
+uv sync --extra app               # Streamlit demo
+uv sync --extra docs              # Sphinx documentation
 ```
+
+## Streamlit demo
+
+Run the interactive UI locally:
+
+```bash
+uv sync --extra app
+uv run streamlit run app.py
+```
+
+To publish on [Streamlit Community Cloud](https://streamlit.io/cloud): sign in with GitHub, pick this repository, set the main file to `app.py`, and deploy (uses `requirements.txt`).
 
 ## Usage
 

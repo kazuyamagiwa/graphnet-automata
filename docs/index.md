@@ -9,6 +9,7 @@ Study of graph evolution using cellular automaton-like methods.
 concept
 installation
 usage
+demos
 api
 ```
 
@@ -25,9 +26,11 @@ patterns explored in the project notebooks.
 * {doc}`concept` — how the evolution rule works
 * {doc}`installation` — install with uv
 * {doc}`usage` — CLI tools and Python API
+* {doc}`demos` — Colab, Binder, and Streamlit
 * {doc}`api` — autodoc reference
 
 ## Project resources
 
 * Source: https://github.com/kazuyamagiwa/graphnet-automata
+* Docs: https://graphnet-automata.readthedocs.io/
 * License: MIT
