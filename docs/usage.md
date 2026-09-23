@@ -32,13 +32,26 @@ graph = nx.from_numpy_array(adjacency)
 Exploratory notebooks live in `notebooks/` (NetworkX 3+). Frozen NetworkX 2
 snapshots are kept under `notebooks/archive/` for historical reference.
 
+Open the starter notebook in Colab or launch Binder — see {doc}`demos`.
+
+## Streamlit demo
+
+```bash
+uv sync --extra app
+uv run streamlit run app.py
+```
+
+The app evolves a single kernel interactively. Details and cloud deploy steps
+are in {doc}`demos`.
+
 ## Package layout
 
 ```text
+app.py                   # Streamlit demo
 src/graphnet_automata/
-  generator.py   # shared automaton core
-  degree.py      # degree-count search CLI
-  generate.py    # HDF5 dataset CLI
-  search.py      # entropy search CLI
-  optimize.py    # Optuna CLI
+  generator.py           # shared automaton core
+  degree.py              # degree-count search CLI
+  generate.py            # HDF5 dataset CLI
+  search.py              # entropy search CLI
+  optimize.py            # Optuna CLI
 ```

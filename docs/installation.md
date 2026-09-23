@@ -22,9 +22,21 @@ uv sync --extra dev
 # pyvis interactive graphs (used by some notebooks)
 uv sync --extra viz
 
+# Streamlit interactive demo (app.py)
+uv sync --extra app
+
 # build this documentation locally
 uv sync --extra docs
 ```
+
+## Streamlit demo
+
+```bash
+uv sync --extra app
+uv run streamlit run app.py
+```
+
+For Colab / Binder / Streamlit Community Cloud hosting notes, see {doc}`demos`.
 
 ## Editable check
 

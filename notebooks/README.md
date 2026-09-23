@@ -15,4 +15,6 @@ Active exploratory notebooks (NetworkX 3+). Order prefixes match the original
 | `ga03.2-interactive-pyvis-visualization.ipynb` | Interactive PyVis exploration of an evolved graph |
 | `ex-interactive-vis-network.html` | Standalone vis.js export of an interactive network |
 
+Try notebooks in the browser via [Colab](https://colab.research.google.com/github/kazuyamagiwa/graphnet-automata/blob/master/notebooks/ga01-odd-even-seed-bonding-communities.ipynb) or [Binder](https://mybinder.org/v2/gh/kazuyamagiwa/graphnet-automata/HEAD). For a slider-based UI, run `uv run streamlit run app.py` (see the docs **Interactive demos** page).
+
 Frozen NetworkX 2-era snapshots (original short names) are under [`archive/`](archive/).
