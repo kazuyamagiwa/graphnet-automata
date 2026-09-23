@@ -57,7 +57,7 @@ with col_kernel:
 with col_info:
     st.subheader("How it works")
     st.markdown(
-        """
+        r"""
 1. Build an Erdős–Rényi **seed** graph and convert it to an adjacency matrix.
 2. Each step **pads** the matrix (new nodes appear around the border).
 3. A 3×3 **kernel** counts local structure; birth/survival thresholds update cells.
