@@ -27,6 +27,10 @@ Binder installs dependencies from `requirements.txt` and uses Python 3.12
 * evolve **one** kernel (kept modest for interactivity)
 * view the graph, optional Louvain communities, and degree histogram
 
+Primary controls sit on the main page (with presets) so phones do not need the
+sidebar. Results use tabs so graph and histogram stay readable on narrow
+screens; desktop keeps the same focused layout.
+
 ### Run locally
 
 ```bash
