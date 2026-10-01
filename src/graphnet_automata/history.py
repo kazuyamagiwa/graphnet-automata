@@ -143,3 +143,96 @@ def lock_in_step(entropy_series: list[float], min_drop: float = 0.25) -> int | N
     if deltas[drop_idx] >= -min_drop:
         return None
     return drop_idx + 1
+
+
+def triptych_indices(steps: int) -> tuple[int, int, int]:
+    """Return ``(seed, mid, final)`` generation indices for a three-frame view.
+
+    Mid is ``steps // 2`` (halfway through evolution). For ``steps == 0`` all
+    three indices collapse to ``0``.
+    """
+    if steps < 0:
+        raise ValueError("steps must be non-negative")
+    return 0, steps // 2, steps
+
+
+def entropy_band(entropy: float, ordered_threshold: float = 2.0) -> str:
+    """Classify degree entropy into a short label for captions.
+
+    Uses the same default cutoff as ``graphnet-automata-search`` (``< 2`` ⇒
+    ordered). Sentinel values map to ``sparse``.
+    """
+    if entropy >= ENTROPY_SENTINEL:
+        return "sparse"
+    if entropy < ordered_threshold:
+        return "ordered"
+    if entropy < ordered_threshold + 0.5:
+        return "mixed"
+    return "disordered"
+
+
+def _modal_nonzero_degree(adjacency: np.ndarray) -> int | None:
+    """Most common non-zero degree, or ``None`` if the graph has no edges."""
+    graph = graph_from_adjacency(adjacency)
+    nonzero = [d for _, d in graph.degree() if d > 0]
+    if not nonzero:
+        return None
+    values, counts = np.unique(nonzero, return_counts=True)
+    return int(values[int(np.argmax(counts))])
+
+
+def evolution_narrative(
+    history: dict[str, Any],
+    *,
+    seed_nodes: int,
+) -> str:
+    """Build a 1–2 sentence caption from final / mid metrics.
+
+    Mentions odd/even seed parity, community count when available, degree
+    entropy band (ordered vs disordered), and optional lock-in step or modal
+    degree when the final graph looks ordered.
+    """
+    steps = int(history["steps"])
+    _, mid_t, final_t = triptych_indices(steps)
+    parity = "Odd" if seed_nodes % 2 else "Even"
+    ent_final = float(history["degree_entropy"][final_t])
+    band = entropy_band(ent_final)
+    communities = history["community_count"]
+    comm_final = communities[final_t] if communities else None
+    lock_t = lock_in_step(history["degree_entropy"])
+
+    parts: list[str] = [f"{parity} seed (n={seed_nodes})"]
+
+    if comm_final is not None:
+        comm_mid = communities[mid_t]
+        if comm_mid is not None and mid_t != final_t and comm_mid != comm_final:
+            parts.append(
+                f"communities {comm_mid} → {comm_final} from mid to final"
+            )
+        else:
+            parts.append(f"{comm_final} Louvain "
+                         f"{'community' if comm_final == 1 else 'communities'}")
+
+    if band == "sparse":
+        parts.append("final graph too sparse for a reliable entropy score")
+    else:
+        parts.append(f"entropy {ent_final:.2f} ({band})")
+
+    sentence1 = "; ".join(parts) + "."
+
+    extras: list[str] = []
+    if band == "ordered":
+        mode_deg = _modal_nonzero_degree(history["adjacencies"][final_t])
+        if mode_deg is not None:
+            extras.append(f"Edge mass concentrated near degree d≈{mode_deg}")
+    if lock_t is not None and band != "sparse":
+        extras.append(f"structure lock-in around t={lock_t}")
+    avg_cnt = float(history["avg_hist_count"][final_t])
+    if band == "ordered" and avg_cnt >= 4.0:
+        extras.append(f"mean hist count {avg_cnt:.1f}")
+
+    if not extras:
+        return sentence1
+    # Keep the caption to roughly two sentences.
+    sentence2 = extras[0] + ("." if len(extras) == 1 else f"; {extras[1]}.")
+    return f"{sentence1} {sentence2}"
