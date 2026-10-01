@@ -12,6 +12,8 @@ side-by-side columns. Advanced options sit in an expander.
 
 After Evolve, a generation scrubber (and optional Play) walks stored
 ``next_state`` snapshots; a metric strip plots growth and order scores vs step.
+An Advanced option can opt into a seed→mid→final triptych and short
+auto-narrative (off by default).
 """
 
 from __future__ import annotations
@@ -29,9 +31,11 @@ from graphnet_automata import kernel_from_index
 from graphnet_automata.history import (
     ENTROPY_SENTINEL,
     collect_evolution_history,
+    evolution_narrative,
     graph_from_adjacency,
     lock_in_step,
     positions_for_step,
+    triptych_indices,
 )
 
 st.set_page_config(
@@ -139,6 +143,12 @@ with st.expander("Advanced options", expanded=False):
     )
     st.checkbox("Directed seed graph", key="directed")
     st.checkbox("Color Louvain communities", key="show_communities")
+    st.checkbox(
+        "Show seed → mid → final overview",
+        key="show_triptych",
+        value=False,
+        help="Optional three-frame summary plus a short metrics caption. Off by default.",
+    )
 
 with st.expander("How it works", expanded=False):
     kcol, tcol = st.columns((1, 2))
@@ -157,7 +167,7 @@ with st.expander("How it works", expanded=False):
 1. Build an Erdős–Rényi **seed** graph → adjacency matrix.
 2. Each step **pads** the matrix (new nodes appear around the border).
 3. A 3×3 **kernel** counts local structure; birth/survival rules update cells.
-4. Scrub generations to watch growth; order scores track when structure locks in.
+4. Scrub generations to watch growth; optionally enable the seed→mid→final overview under Advanced.
 
 There are \(2^9 = 512\) binary kernels. This demo runs **one** kernel at a time.
 """
@@ -201,8 +211,12 @@ def draw_graph_figure(
     graph: nx.Graph,
     partition: dict[int, int] | None,
     pos: dict[int, tuple[float, float]],
+    *,
+    figsize: tuple[float, float] = (4.5, 4.5),
+    node_size: int = 16,
+    title: str | None = None,
 ) -> None:
-    fig_g, ax_g = plt.subplots(figsize=(4.5, 4.5))
+    fig_g, ax_g = plt.subplots(figsize=figsize)
     node_color: list | str = (
         [partition[n] for n in graph.nodes()] if partition is not None else "#4C78A8"
     )
@@ -210,15 +224,44 @@ def draw_graph_figure(
         graph,
         pos,
         ax=ax_g,
-        node_size=16,
+        node_size=node_size,
         node_color=node_color,
         cmap=plt.cm.RdYlBu if partition is not None else None,
     )
     nx.draw_networkx_edges(graph, pos, ax=ax_g, alpha=0.35, width=0.55)
     ax_g.set_axis_off()
+    if title:
+        ax_g.set_title(title, fontsize=10)
     fig_g.tight_layout(pad=0.1)
     st.pyplot(fig_g, clear_figure=True, use_container_width=True)
     plt.close(fig_g)
+
+
+def draw_triptych_frame(
+    history: dict[str, Any],
+    t: int,
+    max_t: int,
+    *,
+    show_communities: bool,
+    graph_seed: int,
+    label: str,
+) -> None:
+    """Draw one seed/mid/final panel with the same layout rules as the scrubber."""
+    adjacency = history["adjacencies"][t]
+    graph = graph_from_adjacency(adjacency)
+    n_nodes = history["n_nodes"][t]
+    partition = _partition_for_graph(graph) if show_communities else None
+    pos = positions_for_step(history["final_pos"], n_nodes, max_t, t)
+    if len(pos) < n_nodes:
+        pos = nx.spring_layout(graph, seed=int(graph_seed))
+    draw_graph_figure(
+        graph,
+        partition,
+        pos,
+        figsize=(3.2, 3.2),
+        node_size=12,
+        title=f"{label} (t={t})",
+    )
 
 
 def draw_histogram_figure(degree_count: collections.Counter) -> None:
@@ -334,6 +377,35 @@ with st.spinner("Evolving graph…"):
 max_t = int(history["steps"])
 if "gen_t" not in st.session_state:
     st.session_state["gen_t"] = max_t
+
+# --- Optional seed → mid → final triptych + narrative (P0.3, Advanced) ----
+if st.session_state.get("show_triptych", False):
+    seed_t, mid_t, final_t = triptych_indices(max_t)
+    st.subheader("Evolution at a glance")
+    caption = evolution_narrative(history, seed_nodes=int(params["nodes"]))
+    st.write(caption)
+
+    trip_cols = st.columns(3)
+    frame_specs = (
+        (seed_t, "Seed"),
+        (mid_t, "Mid"),
+        (final_t, "Final"),
+    )
+    for col, (frame_t, label) in zip(trip_cols, frame_specs):
+        with col:
+            draw_triptych_frame(
+                history,
+                frame_t,
+                max_t,
+                show_communities=bool(params["show_communities"]),
+                graph_seed=int(params["graph_seed"]),
+                label=label,
+            )
+
+    st.caption(
+        "Same spring layout and Louvain coloring as the scrubber below "
+        "(final embedding subset for earlier frames)."
+    )
 
 # Apply deferred playback mutations before the slider binds to gen_t.
 if st.session_state.pop("_reset_gen_t", False):
