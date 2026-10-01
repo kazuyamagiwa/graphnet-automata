@@ -9,18 +9,30 @@ Layout notes
 Primary controls live on the main page (mobile-friendly). Results use tabs so
 phone and desktop both get a readable single-pane view instead of cramped
 side-by-side columns. Advanced options sit in an expander.
+
+After Evolve, a generation scrubber (and optional Play) walks stored
+``next_state`` snapshots; a metric strip plots growth and order scores vs step.
 """
 
 from __future__ import annotations
 
 import collections
+import time
+from typing import Any
 
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import streamlit as st
 
-from graphnet_automata import GeneratorState, kernel_from_index
+from graphnet_automata import kernel_from_index
+from graphnet_automata.history import (
+    ENTROPY_SENTINEL,
+    collect_evolution_history,
+    graph_from_adjacency,
+    lock_in_step,
+    positions_for_step,
+)
 
 st.set_page_config(
     page_title="graphnet-automata",
@@ -115,18 +127,18 @@ steps = st.slider("Steps", min_value=1, max_value=150, key="steps")
 run = st.button("Evolve", type="primary", use_container_width=True)
 
 with st.expander("Advanced options", expanded=False):
-    prob = st.slider(
+    st.slider(
         "Edge probability",
         min_value=0.001,
         max_value=1.0,
         format="%.3f",
         key="prob",
     )
-    graph_seed = st.number_input(
+    st.number_input(
         "RNG seed", min_value=0, max_value=10_000, step=1, key="graph_seed"
     )
-    directed = st.checkbox("Directed seed graph", key="directed")
-    show_communities = st.checkbox("Color Louvain communities", key="show_communities")
+    st.checkbox("Directed seed graph", key="directed")
+    st.checkbox("Color Louvain communities", key="show_communities")
 
 with st.expander("How it works", expanded=False):
     kcol, tcol = st.columns((1, 2))
@@ -145,45 +157,52 @@ with st.expander("How it works", expanded=False):
 1. Build an Erdős–Rényi **seed** graph → adjacency matrix.
 2. Each step **pads** the matrix (new nodes appear around the border).
 3. A 3×3 **kernel** counts local structure; birth/survival rules update cells.
-4. Convert the final matrix back to a graph for drawing and degree stats.
+4. Scrub generations to watch growth; order scores track when structure locks in.
 
 There are \(2^9 = 512\) binary kernels. This demo runs **one** kernel at a time.
 """
         )
 
 
+def _partition_for_graph(graph: nx.Graph) -> dict[int, int] | None:
+    if graph.number_of_edges() == 0:
+        return None
+    try:
+        import community as community_louvain
+
+        return community_louvain.best_partition(graph)
+    except Exception:
+        return None
+
+
 @st.cache_data(show_spinner=False)
-def evolve_graph(
+def evolve_history(
     nodes: int,
     prob: float,
     kernel_index: int,
     steps: int,
     graph_seed: int,
     directed: bool,
-) -> tuple[np.ndarray, list[tuple[int, int]], dict[int, int]]:
-    kernel_local = kernel_from_index(kernel_index)
-    gen = GeneratorState(
+    compute_communities: bool,
+) -> dict[str, Any]:
+    """Cached wrapper around :func:`collect_evolution_history`."""
+    return collect_evolution_history(
         nodes=nodes,
         prob=prob,
-        kernel=kernel_local,
+        kernel_index=kernel_index,
         steps=steps,
         graph_seed=graph_seed,
         directed=directed,
+        compute_communities=compute_communities,
     )
-    adjacency = gen.run()
-    graph = nx.from_numpy_array(adjacency)
-    degrees = dict(graph.degree())
-    edges = list(graph.edges())
-    return adjacency, edges, degrees
 
 
 def draw_graph_figure(
     graph: nx.Graph,
     partition: dict[int, int] | None,
-    graph_seed: int,
+    pos: dict[int, tuple[float, float]],
 ) -> None:
     fig_g, ax_g = plt.subplots(figsize=(4.5, 4.5))
-    pos = nx.spring_layout(graph, seed=int(graph_seed))
     node_color: list | str = (
         [partition[n] for n in graph.nodes()] if partition is not None else "#4C78A8"
     )
@@ -214,6 +233,74 @@ def draw_histogram_figure(degree_count: collections.Counter) -> None:
     plt.close(fig_h)
 
 
+def draw_metrics_figure(
+    history: dict[str, Any],
+    current_t: int,
+) -> None:
+    steps_axis = list(range(len(history["n_nodes"])))
+    lock_t = lock_in_step(history["degree_entropy"])
+    ent_plot = [
+        e if e < ENTROPY_SENTINEL else np.nan for e in history["degree_entropy"]
+    ]
+
+    fig, axes = plt.subplots(2, 1, figsize=(5.5, 4.8), sharex=True)
+
+    ax0 = axes[0]
+    ax0.plot(steps_axis, history["n_nodes"], color="#4C78A8", label="|V|")
+    ax0.plot(steps_axis, history["n_edges"], color="#F58518", label="|E|")
+    ax0.set_ylabel("Count")
+    ax0.legend(loc="upper left", fontsize=8, frameon=False)
+    ax0.set_title("Growth")
+
+    ax1 = axes[1]
+    ax1.plot(steps_axis, ent_plot, color="#54A24B", label="Degree entropy")
+    ax1.plot(
+        steps_axis,
+        history["avg_hist_count"],
+        color="#B279A2",
+        label="Mean hist. count",
+    )
+    communities = history["community_count"]
+    if any(c is not None for c in communities):
+        ax1.plot(
+            steps_axis,
+            [c if c is not None else np.nan for c in communities],
+            color="#E45756",
+            label="Communities",
+            linestyle="--",
+        )
+    ax1.set_xlabel("Generation t")
+    ax1.set_ylabel("Score")
+    ax1.legend(loc="best", fontsize=8, frameon=False)
+    ax1.set_title("Order")
+
+    for ax in axes:
+        ax.axvline(current_t, color="#333333", alpha=0.35, linewidth=1.2)
+        if lock_t is not None:
+            ax.axvline(
+                lock_t,
+                color="#54A24B",
+                alpha=0.55,
+                linewidth=1.4,
+                linestyle=":",
+            )
+
+    if lock_t is not None:
+        y = ent_plot[lock_t]
+        axes[1].annotate(
+            "structure lock-in",
+            xy=(lock_t, 0.0 if np.isnan(y) else y),
+            xytext=(8, 12),
+            textcoords="offset points",
+            fontsize=8,
+            color="#54A24B",
+        )
+
+    fig.tight_layout()
+    st.pyplot(fig, clear_figure=True, use_container_width=True)
+    plt.close(fig)
+
+
 if run:
     st.session_state["run_request"] = {
         "nodes": int(nodes),
@@ -224,6 +311,8 @@ if run:
         "directed": bool(st.session_state["directed"]),
         "show_communities": bool(st.session_state["show_communities"]),
     }
+    st.session_state["gen_t"] = int(steps)
+    st.session_state["playing"] = False
 
 if "run_request" not in st.session_state:
     st.info("Choose a preset or adjust the sliders, then tap **Evolve**.")
@@ -232,24 +321,59 @@ if "run_request" not in st.session_state:
 params = st.session_state["run_request"]
 
 with st.spinner("Evolving graph…"):
-    adjacency, edges, degrees = evolve_graph(
+    history = evolve_history(
         params["nodes"],
         params["prob"],
         params["kernel_index"],
         params["steps"],
         params["graph_seed"],
         params["directed"],
+        bool(params["show_communities"]),
     )
 
-graph = nx.Graph()
-graph.add_nodes_from(range(adjacency.shape[0]))
-graph.add_edges_from(edges)
+max_t = int(history["steps"])
+if "gen_t" not in st.session_state:
+    st.session_state["gen_t"] = max_t
 
-n_nodes = graph.number_of_nodes()
-n_edges = graph.number_of_edges()
+# Apply deferred playback mutations before the slider binds to gen_t.
+if st.session_state.pop("_reset_gen_t", False):
+    st.session_state["gen_t"] = 0
+elif st.session_state.pop("_advance_gen", False):
+    st.session_state["gen_t"] = min(int(st.session_state["gen_t"]) + 1, max_t)
+
+st.session_state["gen_t"] = min(int(st.session_state["gen_t"]), max_t)
+
+# --- Generation scrubber / playback (P0.1) ---------------------------------
+scrub_l, scrub_r = st.columns((4, 1))
+with scrub_l:
+    st.slider(
+        "Generation t",
+        min_value=0,
+        max_value=max_t,
+        key="gen_t",
+        help="t=0 is the seed; each step pads by +2 nodes then applies the CA rule.",
+    )
+with scrub_r:
+    st.write("")  # vertical align with slider
+    play_label = "Pause" if st.session_state.get("playing") else "Play"
+    if st.button(play_label, use_container_width=True):
+        starting = not st.session_state.get("playing", False)
+        st.session_state["playing"] = starting
+        if starting and int(st.session_state["gen_t"]) >= max_t:
+            st.session_state["_reset_gen_t"] = True
+        st.rerun()
+
+t = int(st.session_state["gen_t"])
+adjacency = history["adjacencies"][t]
+graph = graph_from_adjacency(adjacency)
+degrees = dict(graph.degree())
+n_nodes = history["n_nodes"][t]
+n_edges = history["n_edges"][t]
 degree_sequence = sorted(degrees.values(), reverse=True)
 degree_count = collections.Counter(degree_sequence)
-avg_degree = float(np.mean(degree_sequence)) if degree_sequence else 0.0
+avg_degree = history["avg_degree"][t]
+ent_t = history["degree_entropy"][t]
+avg_cnt_t = history["avg_hist_count"][t]
 
 # Two metrics stay readable on a phone; extras go in an expander.
 m1, m2 = st.columns(2)
@@ -259,27 +383,42 @@ with st.expander("More stats"):
     s1, s2 = st.columns(2)
     s1.metric("Avg degree", f"{avg_degree:.2f}")
     s2.metric("Matrix size", f"{adjacency.shape[0]}×{adjacency.shape[1]}")
+    s3, s4 = st.columns(2)
+    ent_display = "—" if ent_t >= ENTROPY_SENTINEL else f"{ent_t:.3f}"
+    s3.metric("Degree entropy", ent_display)
+    s4.metric("Mean hist. count", f"{avg_cnt_t:.2f}")
+    communities_t = history["community_count"][t]
+    if communities_t is not None:
+        st.metric("Communities", communities_t)
     st.caption(
-        f"kernel={params['kernel_index']} · steps={params['steps']} · "
+        f"t={t}/{max_t} · kernel={params['kernel_index']} · "
         f"seed nodes={params['nodes']} · p={params['prob']:.3f}"
+    )
+    st.caption(
+        "Low degree entropy / high mean histogram count ⇒ ordered "
+        "(same criteria as the search / degree CLI tools). "
+        "Each step grows |V| by 2 via matrix padding."
     )
 
 partition = None
-if params["show_communities"] and n_edges > 0:
-    try:
-        import community as community_louvain
+if params["show_communities"]:
+    partition = _partition_for_graph(graph)
 
-        partition = community_louvain.best_partition(graph)
-    except Exception:
-        partition = None
+pos = positions_for_step(history["final_pos"], n_nodes, max_t, t)
+# Fallback if a node somehow lacks a mapped position.
+if len(pos) < n_nodes:
+    pos = nx.spring_layout(graph, seed=int(params["graph_seed"]))
 
 # Tabs keep one clear visual at a time on phones; desktop stays comfortable too.
-tab_graph, tab_hist = st.tabs(["Evolved graph", "Degree histogram"])
+tab_graph, tab_hist, tab_growth = st.tabs(
+    ["Evolved graph", "Degree histogram", "Growth & order"]
+)
 
 with tab_graph:
-    draw_graph_figure(graph, partition, params["graph_seed"])
+    draw_graph_figure(graph, partition, pos)
     if partition is None and params["show_communities"]:
         st.caption("Community coloring unavailable for this graph.")
+    st.caption(f"Graph at generation t = {t} (seed at t = 0).")
 
 with tab_hist:
     if degree_count:
@@ -287,7 +426,24 @@ with tab_hist:
     else:
         st.write("No degree data.")
 
+with tab_growth:
+    draw_metrics_figure(history, current_t=t)
+    st.caption(
+        "Padding always grows |V|; structure shows up when degree entropy drops "
+        "and histogram mass concentrates (mean hist. count rises). "
+        "Dotted green line marks the largest entropy drop when present."
+    )
+
 st.caption(
     "Tip: large steps grow the matrix by 2 rows/cols each generation and slow down quickly. "
     "For full kernel sweeps use the CLI tools (`graphnet-automata-search`, etc.)."
 )
+
+# Schedule the next playback frame after the current view has rendered.
+if st.session_state.get("playing"):
+    if t < max_t:
+        time.sleep(0.12)
+        st.session_state["_advance_gen"] = True
+        st.rerun()
+    else:
+        st.session_state["playing"] = False
