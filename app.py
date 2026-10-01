@@ -19,8 +19,20 @@ auto-narrative (off by default).
 from __future__ import annotations
 
 import collections
+import sys
 import time
+from pathlib import Path
 from typing import Any
+
+# Prefer the repo's src/ checkout over a cached site-packages install.
+# Streamlit Community Cloud can keep an older graphnet-automata wheel/editable
+# path while serving a newer app.py from git; pinning src first keeps them aligned.
+_SRC = Path(__file__).resolve().parent / "src"
+if _SRC.is_dir():
+    _src = str(_SRC)
+    if _src in sys.path:
+        sys.path.remove(_src)
+    sys.path.insert(0, _src)
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -31,11 +43,9 @@ from graphnet_automata import kernel_from_index
 from graphnet_automata.history import (
     ENTROPY_SENTINEL,
     collect_evolution_history,
-    evolution_narrative,
     graph_from_adjacency,
     lock_in_step,
     positions_for_step,
-    triptych_indices,
 )
 
 st.set_page_config(
@@ -379,33 +389,47 @@ if "gen_t" not in st.session_state:
     st.session_state["gen_t"] = max_t
 
 # --- Optional seed → mid → final triptych + narrative (P0.3, Advanced) ----
+# Import overview helpers only when enabled so a stale package missing those
+# symbols cannot break the default scrubber / metrics path.
 if st.session_state.get("show_triptych", False):
-    seed_t, mid_t, final_t = triptych_indices(max_t)
-    st.subheader("Evolution at a glance")
-    caption = evolution_narrative(history, seed_nodes=int(params["nodes"]))
-    st.write(caption)
+    try:
+        from graphnet_automata.history import (
+            evolution_narrative,
+            triptych_indices,
+        )
+    except ImportError:
+        st.warning(
+            "Seed → mid → final overview is unavailable because this environment "
+            "has an older graphnet-automata install. Redeploy/reinstall the app "
+            "package (pip install .) so history.py includes evolution_narrative."
+        )
+    else:
+        seed_t, mid_t, final_t = triptych_indices(max_t)
+        st.subheader("Evolution at a glance")
+        caption = evolution_narrative(history, seed_nodes=int(params["nodes"]))
+        st.write(caption)
 
-    trip_cols = st.columns(3)
-    frame_specs = (
-        (seed_t, "Seed"),
-        (mid_t, "Mid"),
-        (final_t, "Final"),
-    )
-    for col, (frame_t, label) in zip(trip_cols, frame_specs):
-        with col:
-            draw_triptych_frame(
-                history,
-                frame_t,
-                max_t,
-                show_communities=bool(params["show_communities"]),
-                graph_seed=int(params["graph_seed"]),
-                label=label,
-            )
+        trip_cols = st.columns(3)
+        frame_specs = (
+            (seed_t, "Seed"),
+            (mid_t, "Mid"),
+            (final_t, "Final"),
+        )
+        for col, (frame_t, label) in zip(trip_cols, frame_specs):
+            with col:
+                draw_triptych_frame(
+                    history,
+                    frame_t,
+                    max_t,
+                    show_communities=bool(params["show_communities"]),
+                    graph_seed=int(params["graph_seed"]),
+                    label=label,
+                )
 
-    st.caption(
-        "Same spring layout and Louvain coloring as the scrubber below "
-        "(final embedding subset for earlier frames)."
-    )
+        st.caption(
+            "Same spring layout and Louvain coloring as the scrubber below "
+            "(final embedding subset for earlier frames)."
+        )
 
 # Apply deferred playback mutations before the slider binds to gen_t.
 if st.session_state.pop("_reset_gen_t", False):

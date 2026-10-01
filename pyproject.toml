@@ -1,6 +1,6 @@
 [project]
 name = "graphnet-automata"
-version = "0.1.0"
+version = "0.1.1"
 description = "Study of graph evolution using cellular automaton-like methods"
 readme = "README.md"
 authors = [
