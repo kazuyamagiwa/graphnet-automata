@@ -1,5 +1,6 @@
 # Install the local package (src layout) plus the Streamlit UI.
 # Used by Streamlit Community Cloud and Binder.
+# Pin the project path so Cloud reinstalls when the package version bumps.
 .
 
 streamlit>=1.32

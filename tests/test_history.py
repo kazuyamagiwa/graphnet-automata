@@ -109,3 +109,18 @@ def test_evolution_narrative_even_parity() -> None:
     assert text.startswith("Even seed (n=8)")
     # Without community scoring, caption still reports entropy band or sparse.
     assert "entropy" in text or "sparse" in text
+
+
+def test_history_exports_streamlit_overview_symbols() -> None:
+    """Fresh installs must expose the symbols the Streamlit overview imports."""
+    import graphnet_automata.history as history_mod
+
+    for name in (
+        "collect_evolution_history",
+        "evolution_narrative",
+        "graph_from_adjacency",
+        "lock_in_step",
+        "positions_for_step",
+        "triptych_indices",
+    ):
+        assert hasattr(history_mod, name), f"missing {name} in {history_mod.__file__}"
