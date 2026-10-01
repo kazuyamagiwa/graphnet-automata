@@ -10,9 +10,10 @@ Primary controls live on the main page (mobile-friendly). Results use tabs so
 phone and desktop both get a readable single-pane view instead of cramped
 side-by-side columns. Advanced options sit in an expander.
 
-After Evolve, a seed→mid→final triptych and short auto-narrative summarize
-the run; a generation scrubber (and optional Play) walks stored
+After Evolve, a generation scrubber (and optional Play) walks stored
 ``next_state`` snapshots; a metric strip plots growth and order scores vs step.
+An Advanced option can opt into a seed→mid→final triptych and short
+auto-narrative (off by default).
 """
 
 from __future__ import annotations
@@ -142,6 +143,12 @@ with st.expander("Advanced options", expanded=False):
     )
     st.checkbox("Directed seed graph", key="directed")
     st.checkbox("Color Louvain communities", key="show_communities")
+    st.checkbox(
+        "Show seed → mid → final overview",
+        key="show_triptych",
+        value=False,
+        help="Optional three-frame summary plus a short metrics caption. Off by default.",
+    )
 
 with st.expander("How it works", expanded=False):
     kcol, tcol = st.columns((1, 2))
@@ -160,7 +167,7 @@ with st.expander("How it works", expanded=False):
 1. Build an Erdős–Rényi **seed** graph → adjacency matrix.
 2. Each step **pads** the matrix (new nodes appear around the border).
 3. A 3×3 **kernel** counts local structure; birth/survival rules update cells.
-4. Scrub generations to watch growth; the seed→mid→final overview captions order vs disorder.
+4. Scrub generations to watch growth; optionally enable the seed→mid→final overview under Advanced.
 
 There are \(2^9 = 512\) binary kernels. This demo runs **one** kernel at a time.
 """
@@ -371,33 +378,34 @@ max_t = int(history["steps"])
 if "gen_t" not in st.session_state:
     st.session_state["gen_t"] = max_t
 
-# --- Seed → mid → final triptych + auto-narrative (P0.3) -------------------
-seed_t, mid_t, final_t = triptych_indices(max_t)
-st.subheader("Evolution at a glance")
-caption = evolution_narrative(history, seed_nodes=int(params["nodes"]))
-st.write(caption)
+# --- Optional seed → mid → final triptych + narrative (P0.3, Advanced) ----
+if st.session_state.get("show_triptych", False):
+    seed_t, mid_t, final_t = triptych_indices(max_t)
+    st.subheader("Evolution at a glance")
+    caption = evolution_narrative(history, seed_nodes=int(params["nodes"]))
+    st.write(caption)
 
-trip_cols = st.columns(3)
-frame_specs = (
-    (seed_t, "Seed"),
-    (mid_t, "Mid"),
-    (final_t, "Final"),
-)
-for col, (frame_t, label) in zip(trip_cols, frame_specs):
-    with col:
-        draw_triptych_frame(
-            history,
-            frame_t,
-            max_t,
-            show_communities=bool(params["show_communities"]),
-            graph_seed=int(params["graph_seed"]),
-            label=label,
-        )
+    trip_cols = st.columns(3)
+    frame_specs = (
+        (seed_t, "Seed"),
+        (mid_t, "Mid"),
+        (final_t, "Final"),
+    )
+    for col, (frame_t, label) in zip(trip_cols, frame_specs):
+        with col:
+            draw_triptych_frame(
+                history,
+                frame_t,
+                max_t,
+                show_communities=bool(params["show_communities"]),
+                graph_seed=int(params["graph_seed"]),
+                label=label,
+            )
 
-st.caption(
-    "Same spring layout and Louvain coloring as the scrubber below "
-    "(final embedding subset for earlier frames)."
-)
+    st.caption(
+        "Same spring layout and Louvain coloring as the scrubber below "
+        "(final embedding subset for earlier frames)."
+    )
 
 # Apply deferred playback mutations before the slider binds to gen_t.
 if st.session_state.pop("_reset_gen_t", False):
