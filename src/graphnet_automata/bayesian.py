@@ -1,9 +1,12 @@
 """Bayesian CA update: DAG adjacency evolves via partial-correlation CMI.
 
-Phase 1 NumPy prototype. Core state is binary adjacency ``A``, node
-elevations ``E``, and a fixed global covariance ``Cov``. Each tick applies
-gravity (downhill-only edges + elevation drift), then death / birth of
-edges from batched partial correlations — no sequential ``N×N`` edge loops.
+NumPy prototype. Core state is binary adjacency ``A``, node elevations ``E``,
+and a fixed global covariance ``Cov``. Each tick applies gravity (downhill-only
+edges + elevation drift), then death / birth from batched partial correlations
+— no sequential ``N×N`` edge loops.
+
+Birth evaluates all absent undirected pairs (no path-2 filter); elevation
+chooses edge direction after the ``|rho|`` threshold is met.
 """
 
 from __future__ import annotations
@@ -93,27 +96,10 @@ def _union_neighbor_sets(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Union of undirected neighbors of endpoints, excluding ``i`` and ``j``."""
     M = I.shape[0]
-    N = U.shape[0]
     if M == 0:
         return np.full((0, k), -1, dtype=np.intp), np.zeros(0, dtype=np.intp)
     # U[I] → (M, N); boolean OR of neighbor rows.
     mask = (U[I] > 0) | (U[J] > 0)
-    mask[np.arange(M), I] = False
-    mask[np.arange(M), J] = False
-    # Self-loops already zero in U; also drop any out-of-range noise.
-    if N > 0:
-        mask[:, :] = mask[:, :]
-    return _topk_true_indices(mask, k)
-
-
-def _shared_neighbor_sets(
-    U: np.ndarray, I: np.ndarray, J: np.ndarray, k: int
-) -> tuple[np.ndarray, np.ndarray]:
-    """Shared undirected neighbors of ``i`` and ``j``, capped at ``k``."""
-    M = I.shape[0]
-    if M == 0:
-        return np.full((0, k), -1, dtype=np.intp), np.zeros(0, dtype=np.intp)
-    mask = (U[I] > 0) & (U[J] > 0)
     mask[np.arange(M), I] = False
     mask[np.arange(M), J] = False
     return _topk_true_indices(mask, k)
@@ -185,7 +171,7 @@ def step(
     E = E + learning_rate * ((mean_parents + mean_children) * 0.5 - E)
     E = np.clip(E, 0.0, 1.0)
 
-    # Neighbor structure from the post-gravity DAG (undirected for Z / birth).
+    # Neighbor structure from the post-gravity DAG (undirected for Z).
     U = _undirected_neighbors(A)
 
     # --- 2. Death: weak partial correlation given neighbor-union Z -----------
@@ -198,19 +184,22 @@ def step(
             A[I[kill], J[kill]] = 0.0
             U = _undirected_neighbors(A)
 
-    # --- 3. Birth: local path-length-2 candidates, shared-neighbor Z ---------
-    C = U @ U
-    np.fill_diagonal(C, 0.0)
-    gravity_ok = E[:, None] > E[None, :]
-    np.fill_diagonal(gravity_ok, False)
-    candidates = (A <= 0) & (C > 0) & gravity_ok
-    Bi, Bj = np.nonzero(candidates)
+    # --- 3. Birth: all absent undirected pairs; elevation picks direction ----
+    # Unordered pairs with no edge either way (batched via upper triangle).
+    undirected_absent = (A + A.T) == 0.0
+    np.fill_diagonal(undirected_absent, False)
+    Bi, Bj = np.nonzero(np.triu(undirected_absent, k=1))
     if Bi.size:
-        Z, counts = _shared_neighbor_sets(U, Bi, Bj, k)
+        Z, counts = _union_neighbor_sets(U, Bi, Bj, k)
         rho = _batched_partial_corr(Cov, Bi, Bj, Z, counts)
-        birth = np.abs(rho) > threshold_birth
-        if np.any(birth):
-            A[Bi[birth], Bj[birth]] = 1.0
+        strong = np.abs(rho) > threshold_birth
+        # Direction from elevations after the rho gate (equal E → no-op).
+        forward = strong & (E[Bi] > E[Bj])  # i → j
+        backward = strong & (E[Bj] > E[Bi])  # j → i
+        if np.any(forward):
+            A[Bi[forward], Bj[forward]] = 1.0
+        if np.any(backward):
+            A[Bj[backward], Bi[backward]] = 1.0
 
     # Binary adjacency; elevations already clipped.
     A = (A > 0).astype(np.float64)
