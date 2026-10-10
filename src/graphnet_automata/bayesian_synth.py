@@ -200,7 +200,7 @@ def run_phase2(
     weight: float = 2.0,
     learning_rate: float = 0.1,
     threshold_death: float = 0.05,
-    threshold_birth: float = 0.15,
+    threshold_birth: float = 0.10,
     k: int = 2,
     seed: int = 0,
 ) -> Phase2Result:
@@ -313,7 +313,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--weight", type=float, default=2.0)
     parser.add_argument("--learning-rate", type=float, default=0.1)
     parser.add_argument("--threshold-death", type=float, default=0.05)
-    parser.add_argument("--threshold-birth", type=float, default=0.15)
+    parser.add_argument("--threshold-birth", type=float, default=0.10)
     parser.add_argument("--k", type=int, default=2)
     args = parser.parse_args(argv)
 
