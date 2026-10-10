@@ -201,7 +201,7 @@ def run_phase2(
     learning_rate: float = 0.1,
     threshold_death: float = 0.05,
     threshold_birth: float = 0.10,
-    k: int = 2,
+    k: int = 3,
     seed: int = 0,
 ) -> Phase2Result:
     """Generate data, init state, loop ``step``, return comparison artifacts."""
@@ -314,7 +314,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--learning-rate", type=float, default=0.1)
     parser.add_argument("--threshold-death", type=float, default=0.05)
     parser.add_argument("--threshold-birth", type=float, default=0.10)
-    parser.add_argument("--k", type=int, default=2)
+    parser.add_argument(
+        "--k",
+        type=int,
+        default=3,
+        help="Conditioning-set cap (Phase-2 default 3; step() API default remains 2).",
+    )
     args = parser.parse_args(argv)
 
     kwargs = dict(
