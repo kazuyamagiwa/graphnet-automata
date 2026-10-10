@@ -1,0 +1,218 @@
+"""Bayesian CA update: DAG adjacency evolves via partial-correlation CMI.
+
+Phase 1 NumPy prototype. Core state is binary adjacency ``A``, node
+elevations ``E``, and a fixed global covariance ``Cov``. Each tick applies
+gravity (downhill-only edges + elevation drift), then death / birth of
+edges from batched partial correlations — no sequential ``N×N`` edge loops.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+# Small ridge for sub-covariance inversion (linear-Gaussian precision).
+_RIDGE = 1e-8
+
+
+def _undirected_neighbors(A: np.ndarray) -> np.ndarray:
+    """Binary undirected adjacency with zero diagonal."""
+    U = ((A + A.T) > 0).astype(np.float64)
+    np.fill_diagonal(U, 0.0)
+    return U
+
+
+def _topk_true_indices(mask: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
+    """Take the first ``k`` True columns per row (ascending index order).
+
+    Parameters
+    ----------
+    mask:
+        Boolean array of shape ``(M, N)``.
+    k:
+        Maximum number of indices to keep per row.
+
+    Returns
+    -------
+    Z, counts
+        ``Z`` has shape ``(M, k)`` with ``-1`` padding; ``counts`` is ``(M,)``.
+    """
+    if k <= 0:
+        M = mask.shape[0]
+        return np.full((M, 0), -1, dtype=np.intp), np.zeros(M, dtype=np.intp)
+
+    cumsum = np.cumsum(mask, axis=1)
+    selected = mask & (cumsum <= k)
+    counts = selected.sum(axis=1).astype(np.intp)
+    M = mask.shape[0]
+    Z = np.full((M, k), -1, dtype=np.intp)
+    rows, cols = np.nonzero(selected)
+    if rows.size:
+        pos = cumsum[rows, cols] - 1
+        Z[rows, pos] = cols
+    return Z, counts
+
+
+def _batched_partial_corr(
+    Cov: np.ndarray,
+    I: np.ndarray,
+    J: np.ndarray,
+    Z: np.ndarray,
+    counts: np.ndarray,
+) -> np.ndarray:
+    """Partial correlation of ``(I[m], J[m])`` given ``Z[m, :counts[m]]``.
+
+    Groups edges by conditioning-set size and inverts stacked sub-covariances
+    with a single ``numpy.linalg.inv`` call per group.
+    """
+    M = I.shape[0]
+    rho = np.zeros(M, dtype=np.float64)
+    if M == 0:
+        return rho
+
+    k = Z.shape[1] if Z.ndim == 2 else 0
+    for n_z in range(0, k + 1):
+        idx = np.flatnonzero(counts == n_z)
+        if idx.size == 0:
+            continue
+        parts = [I[idx], J[idx]]
+        for t in range(n_z):
+            parts.append(Z[idx, t])
+        nodes = np.column_stack(parts)  # (m, 2+n_z)
+        # Advanced indexing: Cov[nodes[a], nodes[b]] for each row.
+        sub = Cov[nodes[:, :, None], nodes[:, None, :]].astype(np.float64)
+        eye = np.eye(sub.shape[-1], dtype=np.float64)
+        sub = sub + _RIDGE * eye
+        P = np.linalg.inv(sub)
+        denom = np.sqrt(np.maximum(P[:, 0, 0] * P[:, 1, 1], 0.0))
+        rho[idx] = np.where(denom > 0.0, -P[:, 0, 1] / denom, 0.0)
+    return rho
+
+
+def _union_neighbor_sets(
+    U: np.ndarray, I: np.ndarray, J: np.ndarray, k: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Union of undirected neighbors of endpoints, excluding ``i`` and ``j``."""
+    M = I.shape[0]
+    N = U.shape[0]
+    if M == 0:
+        return np.full((0, k), -1, dtype=np.intp), np.zeros(0, dtype=np.intp)
+    # U[I] → (M, N); boolean OR of neighbor rows.
+    mask = (U[I] > 0) | (U[J] > 0)
+    mask[np.arange(M), I] = False
+    mask[np.arange(M), J] = False
+    # Self-loops already zero in U; also drop any out-of-range noise.
+    if N > 0:
+        mask[:, :] = mask[:, :]
+    return _topk_true_indices(mask, k)
+
+
+def _shared_neighbor_sets(
+    U: np.ndarray, I: np.ndarray, J: np.ndarray, k: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Shared undirected neighbors of ``i`` and ``j``, capped at ``k``."""
+    M = I.shape[0]
+    if M == 0:
+        return np.full((0, k), -1, dtype=np.intp), np.zeros(0, dtype=np.intp)
+    mask = (U[I] > 0) & (U[J] > 0)
+    mask[np.arange(M), I] = False
+    mask[np.arange(M), J] = False
+    return _topk_true_indices(mask, k)
+
+
+def step(
+    A: np.ndarray,
+    E: np.ndarray,
+    Cov: np.ndarray,
+    *,
+    learning_rate: float = 0.1,
+    threshold_death: float = 0.05,
+    threshold_birth: float = 0.15,
+    k: int = 2,
+) -> tuple[np.ndarray, np.ndarray]:
+    """One Bayesian CA tick: gravity, then edge death / birth.
+
+    Parameters
+    ----------
+    A:
+        Binary adjacency ``(N, N)``; ``A[i, j] = 1`` means directed edge ``i→j``.
+    E:
+        Node elevations ``(N,)``, intended in ``[0, 1]``.
+    Cov:
+        Global covariance ``(N, N)`` of the continuous observations.
+    learning_rate:
+        Step size for elevation drift toward parent/child midpoint.
+    threshold_death:
+        Kill existing edges with ``|rho|`` below this value.
+    threshold_birth:
+        Birth candidate edges with ``|rho|`` above this value.
+    k:
+        Cap on conditioning-set size ``|Z|`` (default 2).
+
+    Returns
+    -------
+    A_new, E_new
+        Updated binary adjacency and elevations (copies; inputs are not mutated).
+    """
+    A = np.asarray(A, dtype=np.float64).copy()
+    E = np.asarray(E, dtype=np.float64).copy().reshape(-1)
+    Cov = np.asarray(Cov, dtype=np.float64)
+    if A.ndim != 2 or A.shape[0] != A.shape[1]:
+        raise ValueError("A must be a square adjacency matrix")
+    N = A.shape[0]
+    if E.shape != (N,):
+        raise ValueError(f"E must have shape ({N},), got {E.shape}")
+    if Cov.shape != (N, N):
+        raise ValueError(f"Cov must have shape ({N}, {N}), got {Cov.shape}")
+    if k < 0:
+        raise ValueError("k must be non-negative")
+
+    # --- 1. Gravity: downhill-only edges, then elevation drift ---------------
+    gravity_ok = E[:, None] > E[None, :]
+    np.fill_diagonal(gravity_ok, False)
+    A *= gravity_ok
+
+    parent_count = A.sum(axis=0)
+    child_count = A.sum(axis=1)
+    parent_sum = A.T @ E
+    child_sum = A @ E
+    # Isolated side: treat missing mean as the node's own elevation (no pull).
+    mean_parents = np.divide(
+        parent_sum, parent_count, out=E.copy(), where=parent_count > 0
+    )
+    mean_children = np.divide(
+        child_sum, child_count, out=E.copy(), where=child_count > 0
+    )
+    E = E + learning_rate * ((mean_parents + mean_children) * 0.5 - E)
+    E = np.clip(E, 0.0, 1.0)
+
+    # Neighbor structure from the post-gravity DAG (undirected for Z / birth).
+    U = _undirected_neighbors(A)
+
+    # --- 2. Death: weak partial correlation given neighbor-union Z -----------
+    I, J = np.nonzero(A > 0)
+    if I.size:
+        Z, counts = _union_neighbor_sets(U, I, J, k)
+        rho = _batched_partial_corr(Cov, I, J, Z, counts)
+        kill = np.abs(rho) < threshold_death
+        if np.any(kill):
+            A[I[kill], J[kill]] = 0.0
+            U = _undirected_neighbors(A)
+
+    # --- 3. Birth: local path-length-2 candidates, shared-neighbor Z ---------
+    C = U @ U
+    np.fill_diagonal(C, 0.0)
+    gravity_ok = E[:, None] > E[None, :]
+    np.fill_diagonal(gravity_ok, False)
+    candidates = (A <= 0) & (C > 0) & gravity_ok
+    Bi, Bj = np.nonzero(candidates)
+    if Bi.size:
+        Z, counts = _shared_neighbor_sets(U, Bi, Bj, k)
+        rho = _batched_partial_corr(Cov, Bi, Bj, Z, counts)
+        birth = np.abs(rho) > threshold_birth
+        if np.any(birth):
+            A[Bi[birth], Bj[birth]] = 1.0
+
+    # Binary adjacency; elevations already clipped.
+    A = (A > 0).astype(np.float64)
+    np.fill_diagonal(A, 0.0)
+    return A, E
