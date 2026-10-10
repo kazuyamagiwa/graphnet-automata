@@ -7,7 +7,8 @@ then death / birth from batched partial correlations — no sequential ``N×N``
 edge loops.
 
 Birth evaluates all absent undirected pairs (no path-2 filter); elevation
-chooses edge direction after the ``|rho|`` threshold is met.
+chooses edge direction after the ``|rho|`` threshold is met. Death/birth
+condition on the top-``k`` neighbors ranked by absolute covariance vs the pair.
 """
 
 from __future__ import annotations
@@ -25,13 +26,20 @@ def _undirected_neighbors(A: np.ndarray) -> np.ndarray:
     return U
 
 
-def _topk_true_indices(mask: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
-    """Take the first ``k`` True columns per row (ascending index order).
+def _topk_by_score(
+    mask: np.ndarray, scores: np.ndarray, k: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Take up to ``k`` masked columns per row with highest ``scores``.
+
+    Invalid (``mask`` False) entries are ignored. Ties break toward the lower
+    column index. ``Z`` is left-packed with ``-1`` padding.
 
     Parameters
     ----------
     mask:
-        Boolean array of shape ``(M, N)``.
+        Boolean array of shape ``(M, N)`` — candidate pool per row.
+    scores:
+        Float array of shape ``(M, N)`` — ranking scores (higher is better).
     k:
         Maximum number of indices to keep per row.
 
@@ -40,19 +48,20 @@ def _topk_true_indices(mask: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray
     Z, counts
         ``Z`` has shape ``(M, k)`` with ``-1`` padding; ``counts`` is ``(M,)``.
     """
+    M, N = mask.shape
     if k <= 0:
-        M = mask.shape[0]
         return np.full((M, 0), -1, dtype=np.intp), np.zeros(M, dtype=np.intp)
 
-    cumsum = np.cumsum(mask, axis=1)
-    selected = mask & (cumsum <= k)
-    counts = selected.sum(axis=1).astype(np.intp)
-    M = mask.shape[0]
-    Z = np.full((M, k), -1, dtype=np.intp)
-    rows, cols = np.nonzero(selected)
-    if rows.size:
-        pos = cumsum[rows, cols] - 1
-        Z[rows, pos] = cols
+    # Invalid → -inf so they sort after all real scores under descending order.
+    ranked = np.where(mask, scores, -np.inf)
+    # Ascending sort key: lower is better → high score first; +index for ties.
+    sort_key = -ranked + np.arange(N, dtype=np.float64) * 1e-12
+    order = np.argsort(sort_key, axis=1)
+    top = order[:, :k]
+    rows = np.arange(M)[:, None]
+    valid = mask[rows, top]
+    Z = np.where(valid, top, -1).astype(np.intp)
+    counts = valid.sum(axis=1).astype(np.intp)
     return Z, counts
 
 
@@ -93,9 +102,18 @@ def _batched_partial_corr(
 
 
 def _union_neighbor_sets(
-    U: np.ndarray, I: np.ndarray, J: np.ndarray, k: int
+    U: np.ndarray,
+    I: np.ndarray,
+    J: np.ndarray,
+    k: int,
+    Cov: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Union of undirected neighbors of endpoints, excluding ``i`` and ``j``."""
+    """Top-``k`` undirected neighbors of ``i`` or ``j``, ranked by |Cov|.
+
+    Pool = neighbors of ``i`` or ``j`` (excluding endpoints). Score for
+    candidate ``m`` is ``max(|Cov[m,i]|, |Cov[m,j]|)`` so conditioning prefers
+    the strongest known confounders rather than lowest index.
+    """
     M = I.shape[0]
     if M == 0:
         return np.full((0, k), -1, dtype=np.intp), np.zeros(0, dtype=np.intp)
@@ -103,7 +121,11 @@ def _union_neighbor_sets(
     mask = (U[I] > 0) | (U[J] > 0)
     mask[np.arange(M), I] = False
     mask[np.arange(M), J] = False
-    return _topk_true_indices(mask, k)
+    # scores[m, n] = max(|Cov[n, I[m]]|, |Cov[n, J[m]]|)
+    score_i = np.abs(Cov[:, I].T)
+    score_j = np.abs(Cov[:, J].T)
+    scores = np.maximum(score_i, score_j)
+    return _topk_by_score(mask, scores, k)
 
 
 def _vstructure_gravity_well(
@@ -176,7 +198,8 @@ def step(
     threshold_birth:
         Birth candidate edges with ``|rho|`` above this value.
     k:
-        Cap on conditioning-set size ``|Z|`` (default 2).
+        Cap on conditioning-set size ``|Z|`` (default 2). Death/birth pick the
+        top-``k`` neighbors by ``max(|Cov[m,i]|, |Cov[m,j]|)``.
 
     Returns
     -------
@@ -227,10 +250,10 @@ def step(
     # Neighbor structure from the post-gravity DAG (undirected for Z).
     U = _undirected_neighbors(A)
 
-    # --- 3. Death: weak partial correlation given neighbor-union Z -----------
+    # --- 3. Death: weak partial correlation given Cov-ranked neighbor Z -----
     I, J = np.nonzero(A > 0)
     if I.size:
-        Z, counts = _union_neighbor_sets(U, I, J, k)
+        Z, counts = _union_neighbor_sets(U, I, J, k, Cov)
         rho = _batched_partial_corr(Cov, I, J, Z, counts)
         kill = np.abs(rho) < threshold_death
         if np.any(kill):
@@ -243,7 +266,7 @@ def step(
     np.fill_diagonal(undirected_absent, False)
     Bi, Bj = np.nonzero(np.triu(undirected_absent, k=1))
     if Bi.size:
-        Z, counts = _union_neighbor_sets(U, Bi, Bj, k)
+        Z, counts = _union_neighbor_sets(U, Bi, Bj, k, Cov)
         rho = _batched_partial_corr(Cov, Bi, Bj, Z, counts)
         strong = np.abs(rho) > threshold_birth
         # Direction from elevations after the rho gate (equal E → no-op).
@@ -254,7 +277,8 @@ def step(
         if np.any(backward):
             A[Bj[backward], Bi[backward]] = 1.0
 
-    # Binary adjacency; elevations already clipped.
+    # Binary adjacency; clear flat/uphill edges after collider sinks reshape E.
     A = (A > 0).astype(np.float64)
+    A *= E[:, None] > E[None, :]
     np.fill_diagonal(A, 0.0)
     return A, E
