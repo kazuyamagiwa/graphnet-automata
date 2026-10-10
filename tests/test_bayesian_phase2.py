@@ -13,6 +13,7 @@ from graphnet_automata.bayesian_synth import (
     NODE_NAMES,
     TRUTH_EDGES,
     format_edges,
+    make_truth_edges,
     report,
     run_phase2,
     truth_adjacency,
@@ -35,9 +36,12 @@ def test_phase2_step_loop_shapes_and_report(capsys) -> None:
     captured = capsys.readouterr()
     assert "Ground-truth edges" in captured.out
     assert "Final directed" in captured.out
+    assert "ticks/s=" in captured.out
 
     assert result.A_final.shape == (10, 10)
     assert result.E_final.shape == (10,)
+    assert result.n == 10
+    assert result.elapsed_sec > 0.0
     assert set(np.unique(result.A_final)).issubset({0.0, 1.0})
     assert np.all(np.diag(result.A_final) == 0.0)
     assert np.all((result.E_final >= 0.0) & (result.E_final <= 1.0))
@@ -49,3 +53,13 @@ def test_phase2_step_loop_shapes_and_report(capsys) -> None:
     # Default seed: noise edges should not grow vs init (pruning signal).
     assert result.metrics_final.fp <= result.metrics_init.fp
     assert format_edges(result.A_true).count("→") == len(TRUTH_EDGES)
+
+
+def test_n50_truth_sparse_and_short_loop() -> None:
+    edges = make_truth_edges(50, rng=np.random.default_rng(0))
+    assert 50 <= len(edges) <= 75
+    assert all(i < j for i, j in edges)
+    result = run_phase2(n=50, ticks=2, n_samples=1000, seed=0)
+    assert result.A_final.shape == (50, 50)
+    assert result.metrics_final.true_edges == len(result.truth_edges)
+    assert result.elapsed_sec > 0.0

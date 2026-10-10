@@ -94,7 +94,11 @@ def _batched_partial_corr(
         # Advanced indexing: Cov[nodes[a], nodes[b]] for each row.
         sub = Cov[nodes[:, :, None], nodes[:, None, :]].astype(np.float64)
         eye = np.eye(sub.shape[-1], dtype=np.float64)
-        sub = sub + _RIDGE * eye
+        # Relative ridge tracks submatrix scale (long SEMs can have large vars).
+        scale = np.maximum(
+            np.mean(np.diagonal(sub, axis1=-2, axis2=-1), axis=-1), 1e-8
+        )
+        sub = sub + (_RIDGE + 1e-6 * scale)[:, None, None] * eye
         P = np.linalg.inv(sub)
         denom = np.sqrt(np.maximum(P[:, 0, 0] * P[:, 1, 1], 0.0))
         rho[idx] = np.where(denom > 0.0, -P[:, 0, 1] / denom, 0.0)

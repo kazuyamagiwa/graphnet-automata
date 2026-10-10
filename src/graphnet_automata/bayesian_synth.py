@@ -1,29 +1,36 @@
-"""Phase-2 synthetic linear-DAG experiment for :func:`bayesian.step`.
+"""Synthetic linear-DAG experiments for :func:`bayesian.step`.
 
-Generates N=10 continuous variables from a known linear SEM (chain +
-V-structure + extras), estimates empirical covariance, initializes a random
-upper-triangular adjacency and random elevations, then loops the NumPy CA
-``step`` and reports recovery vs ground truth.
+Phase 2 (N=10) and Phase 5 scale (N=50) share the same harness: build a known
+linear-Gaussian SEM, estimate empirical covariance, initialize a random
+upper-triangular adjacency + random elevations, loop NumPy ``step``, and
+report directed / skeleton recovery. The step loop is timed with
+``time.perf_counter``.
 
 Run::
 
     uv run python -m graphnet_automata.bayesian_synth
     uv run python -m graphnet_automata.bayesian_synth --seeds 10
+    uv run python -m graphnet_automata.bayesian_synth --n 50
     uv run pytest tests/test_bayesian_phase2.py -s
 """
 
 from __future__ import annotations
 
 import argparse
+import platform
+import time
 from dataclasses import dataclass
 
 import numpy as np
 
 from graphnet_automata.bayesian import step
 
-# Node labels for readable reporting (index = variable id).
+# ---------------------------------------------------------------------------
+# Phase-2 N=10 ground truth (fixed motifs; kept for tests / default CLI)
+# ---------------------------------------------------------------------------
+
 NODE_NAMES = ("A", "B", "C", "D", "E", "F", "G", "H", "I", "J")
-N = 10
+N = 10  # default / Phase-2 size
 
 # Ground-truth directed edges i→j (parent → child). All edges satisfy i < j
 # so index order is a valid topological order.
@@ -44,10 +51,74 @@ TRUTH_EDGES: tuple[tuple[int, int], ...] = (
 )
 
 
-def truth_adjacency() -> np.ndarray:
-    """Binary ground-truth adjacency ``(N, N)``."""
-    A = np.zeros((N, N), dtype=np.float64)
-    for i, j in TRUTH_EDGES:
+def make_truth_edges(
+    n: int,
+    *,
+    target_edges: int | None = None,
+    rng: np.random.Generator | None = None,
+) -> tuple[tuple[int, int], ...]:
+    """Build a sparse known DAG with edges ``i→j`` only for ``i < j``.
+
+    * ``n == 10`` — Phase-2 motif set (:data:`TRUTH_EDGES`).
+    * larger ``n`` — backbone chain, periodic V-structures / colliders, then
+      random forward edges until ``target_edges`` (default ~1.25·n, clipped
+      to ``[50, 75]`` when ``n >= 50``).
+    """
+    if n < 2:
+        raise ValueError("n must be >= 2")
+    if n == 10 and target_edges is None:
+        return TRUTH_EDGES
+
+    if rng is None:
+        rng = np.random.default_rng(0)
+    if target_edges is None:
+        if n >= 50:
+            target_edges = int(np.clip(round(1.25 * n), 50, 75))
+        else:
+            target_edges = max(n - 1, min(n + n // 2, n * (n - 1) // 2))
+
+    max_edges = n * (n - 1) // 2
+    target_edges = int(min(max(target_edges, n - 1), max_edges))
+
+    edges: set[tuple[int, int]] = set()
+    # Backbone chain so every node is reachable in the topo order.
+    for i in range(n - 1):
+        edges.add((i, i + 1))
+    # Periodic V-structures / colliders: i → i+2 ← i+1
+    for i in range(0, n - 2, 4):
+        edges.add((i, i + 2))
+        edges.add((i + 1, i + 2))
+    # Occasional longer skip edges for sparsity variety.
+    for i in range(0, n - 5, 7):
+        edges.add((i, i + 5))
+
+    # Fill with random forward edges to hit the target count.
+    while len(edges) < target_edges:
+        i = int(rng.integers(0, n - 1))
+        j = int(rng.integers(i + 1, n))
+        edges.add((i, j))
+
+    # If motifs overshot, drop random non-backbone extras (keep the chain).
+    backbone = {(i, i + 1) for i in range(n - 1)}
+    extras = sorted(edges - backbone)
+    while len(edges) > target_edges and extras:
+        drop = extras.pop(int(rng.integers(0, len(extras))))
+        edges.discard(drop)
+        extras = sorted(edges - backbone)
+
+    return tuple(sorted(edges))
+
+
+def truth_adjacency(
+    n: int = N,
+    *,
+    edges: tuple[tuple[int, int], ...] | None = None,
+) -> np.ndarray:
+    """Binary ground-truth adjacency ``(n, n)``."""
+    if edges is None:
+        edges = make_truth_edges(n)
+    A = np.zeros((n, n), dtype=np.float64)
+    for i, j in edges:
         A[i, j] = 1.0
     return A
 
@@ -57,8 +128,11 @@ def generate_linear_dag_samples(
     noise_scale: float = 1.0,
     weight: float = 2.0,
     rng: np.random.Generator | None = None,
+    *,
+    n: int | None = None,
+    edges: tuple[tuple[int, int], ...] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Draw samples from the linear SEM implied by :data:`TRUTH_EDGES`.
+    """Draw samples from a linear SEM on a known DAG.
 
     Each node is ``X_j = sum_i W[i,j] X_i + eps_j`` with fixed weight ``weight``
     on every true edge and i.i.d. Gaussian noise.
@@ -66,17 +140,21 @@ def generate_linear_dag_samples(
     Returns
     -------
     X, W
-        ``X`` has shape ``(n_samples, N)``; ``W`` is the SEM weight matrix.
+        ``X`` has shape ``(n_samples, n)``; ``W`` is the SEM weight matrix.
     """
     if rng is None:
         rng = np.random.default_rng(0)
-    W = np.zeros((N, N), dtype=np.float64)
-    for i, j in TRUTH_EDGES:
+    if edges is None:
+        edges = make_truth_edges(n if n is not None else N, rng=rng)
+    n_nodes = n if n is not None else (max(max(e) for e in edges) + 1 if edges else N)
+
+    W = np.zeros((n_nodes, n_nodes), dtype=np.float64)
+    for i, j in edges:
         W[i, j] = weight
 
-    # Forward sweep in index order (valid topo order for this DAG).
-    X = np.zeros((n_samples, N), dtype=np.float64)
-    for j in range(N):
+    # Forward sweep in index order (valid topo order when all edges have i < j).
+    X = np.zeros((n_samples, n_nodes), dtype=np.float64)
+    for j in range(n_nodes):
         signal = X @ W[:, j]
         X[:, j] = signal + rng.normal(0.0, noise_scale, size=n_samples)
     return X, W
@@ -164,18 +242,28 @@ def skeleton_metrics(A_pred: np.ndarray, A_true: np.ndarray) -> EdgeMetrics:
     )
 
 
-def format_edges(A: np.ndarray) -> str:
-    """Human-readable edge list using :data:`NODE_NAMES`."""
+def _edge_label(i: int, j: int, n: int) -> str:
+    if n == 10 and i < len(NODE_NAMES) and j < len(NODE_NAMES):
+        return f"{NODE_NAMES[i]}→{NODE_NAMES[j]}"
+    return f"{i}→{j}"
+
+
+def format_edges(A: np.ndarray, *, max_edges: int | None = None) -> str:
+    """Human-readable edge list (letter labels for N=10, indices otherwise)."""
     src, dst = np.nonzero(A > 0)
     if src.size == 0:
         return "(none)"
-    parts = [f"{NODE_NAMES[i]}→{NODE_NAMES[j]}" for i, j in zip(src, dst)]
+    n = A.shape[0]
+    parts = [_edge_label(int(i), int(j), n) for i, j in zip(src, dst)]
+    if max_edges is not None and len(parts) > max_edges:
+        shown = ", ".join(parts[:max_edges])
+        return f"{shown}, … (+{len(parts) - max_edges} more)"
     return ", ".join(parts)
 
 
 @dataclass
 class Phase2Result:
-    """Artifacts from one Phase-2 run."""
+    """Artifacts from one synthetic run (Phase 2 / Phase 5)."""
 
     A_true: np.ndarray
     A_init: np.ndarray
@@ -190,29 +278,76 @@ class Phase2Result:
     ticks: int
     history: list[EdgeMetrics]
     seed: int
+    n: int = N
+    truth_edges: tuple[tuple[int, int], ...] = TRUTH_EDGES
+    elapsed_sec: float = 0.0
+
+    @property
+    def ticks_per_sec(self) -> float:
+        return self.ticks / self.elapsed_sec if self.elapsed_sec > 0 else float("inf")
+
+
+def _default_edge_prob(n: int) -> float:
+    """Sparse-ish upper-tri init density (keeps expected edges O(n))."""
+    if n <= 10:
+        return 0.4
+    # Aim for ~2–3× true-edge count as noisy start without filling the tri.
+    target_init = min(3.0 * n, 0.15 * n * (n - 1) / 2)
+    return float(target_init / (n * (n - 1) / 2))
+
+
+def _default_samples(n: int) -> int:
+    return 5000 if n <= 10 else max(5000, 200 * n)
+
+
+def _default_weight(n: int) -> float:
+    """Keep SEM variances stable on long chains (N=50+)."""
+    return 2.0 if n <= 10 else 0.8
+
+
+def _standardize_columns(X: np.ndarray) -> np.ndarray:
+    """Zero-mean / unit-variance columns (stabilizes Cov for large N)."""
+    Xc = X - X.mean(axis=0, keepdims=True)
+    std = Xc.std(axis=0, keepdims=True)
+    std = np.where(std > 1e-8, std, 1.0)
+    return Xc / std
 
 
 def run_phase2(
     *,
-    n_samples: int = 5000,
+    n: int = N,
+    n_samples: int | None = None,
     ticks: int = 100,
-    edge_prob: float = 0.4,
-    weight: float = 2.0,
+    edge_prob: float | None = None,
+    weight: float | None = None,
     learning_rate: float = 0.1,
     threshold_death: float = 0.05,
     threshold_birth: float = 0.10,
     k: int = 3,
     seed: int = 0,
+    target_edges: int | None = None,
 ) -> Phase2Result:
-    """Generate data, init state, loop ``step``, return comparison artifacts."""
+    """Generate data, init state, loop ``step`` (timed), return artifacts."""
     rng = np.random.default_rng(seed)
+    if n_samples is None:
+        n_samples = _default_samples(n)
+    if edge_prob is None:
+        edge_prob = _default_edge_prob(n)
+    if weight is None:
+        weight = _default_weight(n)
+
+    # Dedicated RNG stream for DAG construction so init A/E stay reproducible.
+    dag_rng = np.random.default_rng(seed + 17_389)
+    truth_edges = make_truth_edges(n, target_edges=target_edges, rng=dag_rng)
     X, _ = generate_linear_dag_samples(
-        n_samples=n_samples, weight=weight, rng=rng
+        n_samples=n_samples, weight=weight, rng=rng, n=n, edges=truth_edges
     )
+    if n > 10:
+        X = _standardize_columns(X)
     Cov = empirical_covariance(X)
-    A_true = truth_adjacency()
-    A = random_upper_tri_adjacency(N, p=edge_prob, rng=rng)
-    E = rng.random(N)
+    A_true = truth_adjacency(n, edges=truth_edges)
+    A = random_upper_tri_adjacency(n, p=edge_prob, rng=rng)
+    E = rng.random(n)
 
     metrics_init = edge_metrics(A, A_true)
     sk_init = skeleton_metrics(A, A_true)
@@ -220,6 +355,7 @@ def run_phase2(
     A_init = A.copy()
     E_init = E.copy()
 
+    t0 = time.perf_counter()
     for _ in range(ticks):
         A, E = step(
             A,
@@ -231,6 +367,7 @@ def run_phase2(
             k=k,
         )
         history.append(edge_metrics(A, A_true))
+    elapsed = time.perf_counter() - t0
 
     return Phase2Result(
         A_true=A_true,
@@ -246,6 +383,9 @@ def run_phase2(
         ticks=ticks,
         history=history,
         seed=seed,
+        n=n,
+        truth_edges=truth_edges,
+        elapsed_sec=elapsed,
     )
 
 
@@ -253,29 +393,42 @@ def report(result: Phase2Result) -> str:
     """Multi-line human-readable summary for stdout / pytest ``-s``."""
     m0, m1 = result.metrics_init, result.metrics_final
     s0, s1 = result.skeleton_init, result.skeleton_final
+    edge_cap = 40 if result.n > 10 else None
     lines = [
-        "=== Phase 2 synthetic Bayesian CA ===",
-        f"seed={result.seed}  N={N}  ticks={result.ticks}",
-        f"Ground-truth edges ({m1.true_edges}): {format_edges(result.A_true)}",
-        f"Init A edges ({m0.pred_edges}): {format_edges(result.A_init)}",
+        "=== Synthetic Bayesian CA ===",
+        f"seed={result.seed}  N={result.n}  ticks={result.ticks}  "
+        f"true_edges={len(result.truth_edges)}",
+        f"Ground-truth edges ({m1.true_edges}): "
+        f"{format_edges(result.A_true, max_edges=edge_cap)}",
+        f"Init A edges ({m0.pred_edges}): "
+        f"{format_edges(result.A_init, max_edges=edge_cap)}",
         f"Init directed:  TP={m0.tp} FP={m0.fp} FN={m0.fn}  "
         f"P={m0.precision:.2f} R={m0.recall:.2f} F1={m0.f1:.2f}",
         f"Init skeleton:  TP={s0.tp} FP={s0.fp} FN={s0.fn}  "
         f"P={s0.precision:.2f} R={s0.recall:.2f} F1={s0.f1:.2f}",
-        f"Final A edges ({m1.pred_edges}): {format_edges(result.A_final)}",
+        f"Final A edges ({m1.pred_edges}): "
+        f"{format_edges(result.A_final, max_edges=edge_cap)}",
         f"Final directed: TP={m1.tp} FP={m1.fp} FN={m1.fn}  "
         f"P={m1.precision:.2f} R={m1.recall:.2f} F1={m1.f1:.2f}",
         f"Final skeleton: TP={s1.tp} FP={s1.fp} FN={s1.fn}  "
         f"P={s1.precision:.2f} R={s1.recall:.2f} F1={s1.f1:.2f}",
         f"Noise prune ΔFP (directed): {m0.fp} → {m1.fp} ({m1.fp - m0.fp:+d})",
-        f"E_init:  {np.array2string(result.E_init, precision=3)}",
-        f"E_final: {np.array2string(result.E_final, precision=3)}",
-        "True edge status (final):",
+        f"Wall time (step loop): {result.elapsed_sec:.4f}s  "
+        f"ticks/s={result.ticks_per_sec:.2f}",
     ]
-    for i, j in TRUTH_EDGES:
-        present = result.A_final[i, j] > 0
-        mark = "HIT" if present else "MISS"
-        lines.append(f"  {NODE_NAMES[i]}→{NODE_NAMES[j]}: {mark}")
+    if result.n <= 10:
+        lines.append(f"E_init:  {np.array2string(result.E_init, precision=3)}")
+        lines.append(f"E_final: {np.array2string(result.E_final, precision=3)}")
+        lines.append("True edge status (final):")
+        for i, j in result.truth_edges:
+            present = result.A_final[i, j] > 0
+            mark = "HIT" if present else "MISS"
+            lines.append(f"  {_edge_label(i, j, result.n)}: {mark}")
+    else:
+        lines.append(
+            f"E range: init[{result.E_init.min():.3f}, {result.E_init.max():.3f}]  "
+            f"final[{result.E_final.min():.3f}, {result.E_final.max():.3f}]"
+        )
     return "\n".join(lines)
 
 
@@ -287,20 +440,28 @@ def report_multi(results: list[Phase2Result]) -> str:
     dir_fn = np.array([r.metrics_final.fn for r in results], dtype=float)
     sk_f1 = np.array([r.skeleton_final.f1 for r in results])
     init_fp = np.array([r.metrics_init.fp for r in results], dtype=float)
+    tps = np.array([r.ticks_per_sec for r in results])
     lines = [
-        f"=== Multi-seed summary (n={len(results)}) ===",
+        f"=== Multi-seed summary (n_runs={len(results)}, N={results[0].n}) ===",
         f"Directed final:  mean TP/FP/FN = "
         f"{dir_tp.mean():.2f}/{dir_fp.mean():.2f}/{dir_fn.mean():.2f}  "
         f"mean F1={dir_f1.mean():.2f} ± {dir_f1.std():.2f}",
         f"Skeleton final:  mean F1={sk_f1.mean():.2f} ± {sk_f1.std():.2f}",
         f"Mean init FP → final FP: {init_fp.mean():.1f} → {dir_fp.mean():.1f}",
+        f"Ticks/s: mean={tps.mean():.2f}  min={tps.min():.2f}  max={tps.max():.2f}",
     ]
     return "\n".join(lines)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--samples", type=int, default=5000)
+    parser.add_argument(
+        "--n",
+        type=int,
+        default=N,
+        help="Number of nodes (10 = Phase 2; 50 = Phase 5 scale).",
+    )
+    parser.add_argument("--samples", type=int, default=None)
     parser.add_argument("--ticks", type=int, default=100)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
@@ -309,8 +470,13 @@ def main(argv: list[str] | None = None) -> int:
         default=0,
         help="If >0, run this many seeds (0..seeds-1) and print aggregate.",
     )
-    parser.add_argument("--edge-prob", type=float, default=0.4)
-    parser.add_argument("--weight", type=float, default=2.0)
+    parser.add_argument("--edge-prob", type=float, default=None)
+    parser.add_argument(
+        "--weight",
+        type=float,
+        default=None,
+        help="SEM edge weight (default 2.0 for n=10, 0.8 for larger n).",
+    )
     parser.add_argument("--learning-rate", type=float, default=0.1)
     parser.add_argument("--threshold-death", type=float, default=0.05)
     parser.add_argument("--threshold-birth", type=float, default=0.10)
@@ -320,9 +486,16 @@ def main(argv: list[str] | None = None) -> int:
         default=3,
         help="Conditioning-set cap (Phase-2 default 3; step() API default remains 2).",
     )
+    parser.add_argument(
+        "--target-edges",
+        type=int,
+        default=None,
+        help="True-edge count for n!=10 sparse DAGs (default ~62 for n=50).",
+    )
     args = parser.parse_args(argv)
 
     kwargs = dict(
+        n=args.n,
         n_samples=args.samples,
         ticks=args.ticks,
         edge_prob=args.edge_prob,
@@ -331,6 +504,13 @@ def main(argv: list[str] | None = None) -> int:
         threshold_death=args.threshold_death,
         threshold_birth=args.threshold_birth,
         k=args.k,
+        target_edges=args.target_edges,
+    )
+
+    print(
+        f"machine: {platform.system()} {platform.release()}  "
+        f"python={platform.python_version()}  "
+        f"numpy={np.__version__}"
     )
 
     if args.seeds and args.seeds > 0:
