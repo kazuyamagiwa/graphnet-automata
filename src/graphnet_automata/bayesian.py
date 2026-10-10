@@ -2,8 +2,9 @@
 
 NumPy prototype. Core state is binary adjacency ``A``, node elevations ``E``,
 and a fixed global covariance ``Cov``. Each tick applies gravity (downhill-only
-edges + elevation drift), then death / birth from batched partial correlations
-— no sequential ``N×N`` edge loops.
+edges + elevation drift), a V-structure gravity well that sinks colliders,
+then death / birth from batched partial correlations — no sequential ``N×N``
+edge loops.
 
 Birth evaluates all absent undirected pairs (no path-2 filter); elevation
 chooses edge direction after the ``|rho|`` threshold is met.
@@ -105,6 +106,49 @@ def _union_neighbor_sets(
     return _topk_true_indices(mask, k)
 
 
+def _vstructure_gravity_well(
+    A: np.ndarray,
+    E: np.ndarray,
+    Cov: np.ndarray,
+    *,
+    learning_rate: float,
+    threshold_death: float,
+) -> np.ndarray:
+    """Sink elevations of collider nodes implied by V-structure pattern.
+
+    Absent undirected pairs ``(i, j)`` that share neighbor(s) via ``U @ U`` and
+    are marginally independent (``|rho| < threshold_death`` with empty ``Z``)
+    mark each shared neighbor ``k`` as a collider. Those elevations are lowered
+    by ``learning_rate * 2`` (once per tick if flagged), then clipped to
+    ``[0, 1]``.
+    """
+    U = _undirected_neighbors(A)
+    undirected_absent = (A + A.T) == 0.0
+    np.fill_diagonal(undirected_absent, False)
+    shared_counts = U @ U
+    np.fill_diagonal(shared_counts, 0.0)
+    pair_mask = np.triu(undirected_absent & (shared_counts > 0), k=1)
+    Pi, Pj = np.nonzero(pair_mask)
+    if Pi.size == 0:
+        return E
+
+    # Marginal / empty-Z partial correlation (batched 2×2 precision).
+    Z_empty = np.zeros((Pi.size, 0), dtype=np.intp)
+    counts0 = np.zeros(Pi.size, dtype=np.intp)
+    rho = _batched_partial_corr(Cov, Pi, Pj, Z_empty, counts0)
+    independent = np.abs(rho) < threshold_death
+    if not np.any(independent):
+        return E
+
+    Ii = Pi[independent]
+    Ij = Pj[independent]
+    shared = (U[Ii] > 0) & (U[Ij] > 0)  # (M_ind, N)
+    collider = shared.any(axis=0)  # unique k flagged this tick
+    E = E.copy()
+    E[collider] -= learning_rate * 2.0
+    return np.clip(E, 0.0, 1.0)
+
+
 def step(
     A: np.ndarray,
     E: np.ndarray,
@@ -115,7 +159,7 @@ def step(
     threshold_birth: float = 0.15,
     k: int = 2,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """One Bayesian CA tick: gravity, then edge death / birth.
+    """One Bayesian CA tick: gravity, V-well, then edge death / birth.
 
     Parameters
     ----------
@@ -171,10 +215,19 @@ def step(
     E = E + learning_rate * ((mean_parents + mean_children) * 0.5 - E)
     E = np.clip(E, 0.0, 1.0)
 
+    # --- 2. V-structure gravity well (before death / birth edge updates) -----
+    E = _vstructure_gravity_well(
+        A,
+        E,
+        Cov,
+        learning_rate=learning_rate,
+        threshold_death=threshold_death,
+    )
+
     # Neighbor structure from the post-gravity DAG (undirected for Z).
     U = _undirected_neighbors(A)
 
-    # --- 2. Death: weak partial correlation given neighbor-union Z -----------
+    # --- 3. Death: weak partial correlation given neighbor-union Z -----------
     I, J = np.nonzero(A > 0)
     if I.size:
         Z, counts = _union_neighbor_sets(U, I, J, k)
@@ -184,7 +237,7 @@ def step(
             A[I[kill], J[kill]] = 0.0
             U = _undirected_neighbors(A)
 
-    # --- 3. Birth: all absent undirected pairs; elevation picks direction ----
+    # --- 4. Birth: all absent undirected pairs; elevation picks direction ----
     # Unordered pairs with no edge either way (batched via upper triangle).
     undirected_absent = (A + A.T) == 0.0
     np.fill_diagonal(undirected_absent, False)
