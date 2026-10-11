@@ -37,6 +37,12 @@ docs = [
     "sphinx-autodoc-typehints>=2.0",
     "sphinx-rtd-theme>=2.0",
 ]
+# CPU wheels only. For accelerators install a platform wheel separately
+# (see README "Running on GPU"): jax-mps on Apple Silicon, or jax[cuda] on NVIDIA.
+jax = [
+    "jax>=0.4.30",
+    "jaxlib>=0.4.30",
+]
 
 [project.scripts]
 graphnet-automata = "graphnet_automata:main"
