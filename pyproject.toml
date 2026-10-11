@@ -43,6 +43,10 @@ jax = [
     "jax>=0.4.30",
     "jaxlib>=0.4.30",
 ]
+gcastle = [
+    "gcastle>=1.0.4",
+    "torch>=2.14.1",
+]
 
 [project.scripts]
 graphnet-automata = "graphnet_automata:main"

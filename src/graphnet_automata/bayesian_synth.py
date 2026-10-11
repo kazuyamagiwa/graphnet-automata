@@ -341,6 +341,62 @@ def _standardize_columns(X: np.ndarray) -> np.ndarray:
     return Xc / std
 
 
+@dataclass(frozen=True)
+class SyntheticBundle:
+    """Shared SEM artifacts for synth harness and external benchmarks."""
+
+    X: np.ndarray
+    Cov: np.ndarray
+    A_true: np.ndarray
+    A_init: np.ndarray
+    E_init: np.ndarray
+    truth_edges: tuple[tuple[int, int], ...]
+    n: int
+    seed: int
+
+
+def prepare_synthetic_bundle(
+    *,
+    n: int = N,
+    n_samples: int | None = None,
+    edge_prob: float | None = None,
+    weight: float | None = None,
+    seed: int = 0,
+    target_edges: int | None = None,
+) -> SyntheticBundle:
+    """Build the same linear-DAG dataset used by :func:`run_phase2`."""
+    rng = np.random.default_rng(seed)
+    if n_samples is None:
+        n_samples = _default_samples(n)
+    if edge_prob is None:
+        edge_prob = _default_edge_prob(n)
+    if weight is None:
+        weight = _default_weight(n)
+
+    # Dedicated RNG stream for DAG construction so init A/E stay reproducible.
+    dag_rng = np.random.default_rng(seed + 17_389)
+    truth_edges = make_truth_edges(n, target_edges=target_edges, rng=dag_rng)
+    X, _ = generate_linear_dag_samples(
+        n_samples=n_samples, weight=weight, rng=rng, n=n, edges=truth_edges
+    )
+    if n > 10:
+        X = _standardize_columns(X)
+    Cov = empirical_covariance(X)
+    A_true = truth_adjacency(n, edges=truth_edges)
+    A_init = random_upper_tri_adjacency(n, p=edge_prob, rng=rng)
+    E_init = rng.random(n)
+    return SyntheticBundle(
+        X=X,
+        Cov=Cov,
+        A_true=A_true,
+        A_init=A_init,
+        E_init=E_init,
+        truth_edges=truth_edges,
+        n=n,
+        seed=seed,
+    )
+
+
 def run_phase2(
     *,
     n: int = N,
@@ -357,27 +413,19 @@ def run_phase2(
     backend: str = "numpy",
 ) -> Phase2Result:
     """Generate data, init state, loop ``step`` (timed), return artifacts."""
-    rng = np.random.default_rng(seed)
-    if n_samples is None:
-        n_samples = _default_samples(n)
-    if edge_prob is None:
-        edge_prob = _default_edge_prob(n)
-    if weight is None:
-        weight = _default_weight(n)
     step_fn, device = _resolve_step(backend)
-
-    # Dedicated RNG stream for DAG construction so init A/E stay reproducible.
-    dag_rng = np.random.default_rng(seed + 17_389)
-    truth_edges = make_truth_edges(n, target_edges=target_edges, rng=dag_rng)
-    X, _ = generate_linear_dag_samples(
-        n_samples=n_samples, weight=weight, rng=rng, n=n, edges=truth_edges
+    bundle = prepare_synthetic_bundle(
+        n=n,
+        n_samples=n_samples,
+        edge_prob=edge_prob,
+        weight=weight,
+        seed=seed,
+        target_edges=target_edges,
     )
-    if n > 10:
-        X = _standardize_columns(X)
-    Cov = empirical_covariance(X)
-    A_true = truth_adjacency(n, edges=truth_edges)
-    A = random_upper_tri_adjacency(n, p=edge_prob, rng=rng)
-    E = rng.random(n)
+    X, Cov, A_true = bundle.X, bundle.Cov, bundle.A_true
+    A = bundle.A_init.copy()
+    E = bundle.E_init.copy()
+    truth_edges = bundle.truth_edges
 
     metrics_init = edge_metrics(A, A_true)
     sk_init = skeleton_metrics(A, A_true)
