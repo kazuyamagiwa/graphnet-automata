@@ -55,7 +55,10 @@ See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/t
 ├── notebooks/                 # Active notebooks (NetworkX 3+)
 │   └── archive/               # Frozen NetworkX 2-era snapshots
 ├── src/graphnet_automata/     # Installable package (uv src layout)
-│   ├── generator.py           # Shared automaton core
+│   ├── generator.py           # Shared topological CA core
+│   ├── bayesian.py            # NumPy Bayesian CA step (DAG / CMI)
+│   ├── bayesian_synth.py      # Synthetic DAG harness (N=10 / N=50)
+│   ├── jax_core.py            # JAX @jit port of bayesian.step
 │   ├── degree.py              # Degree-count kernel search
 │   ├── generate.py            # Dataset generation
 │   ├── optimize.py            # Optuna seed optimization
@@ -66,12 +69,55 @@ See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/t
 └── .python-version
 ```
 
+## Bayesian automata (Phases 1–6)
+
+On branch `experimental/bayesian-automata`, adjacency evolves by **Bayesian network structure learning** (linear-Gaussian partial correlation / CMI) with elevation-enforced DAGs — not Conway-style topological CA rules.
+
+| Phase | Achievement |
+| --- | --- |
+| 1 | Batched NumPy `step(A, E, Cov)` — gravity, death, birth |
+| 2–4 | Synthetic N=10 recovery; V-structure gravity well; Cov-ranked top-k `Z` |
+| 5 | N=50 sparse scale harness + timing |
+| 6 | Pure functional JAX `@jit` port (`jax_core`) |
+
+**Key metrics (seeded harness):**
+
+| Setting | Directed F1 | Skeleton |
+| --- | --- | --- |
+| N=10, k=3 | ~0.81 (multi-seed); seed-0 ~0.94 | F1 ~0.89 |
+| N=50 | ~0.39 | F1 ~0.73, **recall ~0.97** |
+
+**GPU (user-reported):** Tesla T4 — 100 ticks in **0.43s** (~**232** ticks/sec), parity with NumPy recovery metrics.
+
+### Install JAX
+
+```bash
+uv sync --extra jax                 # CPU jax/jaxlib
+# Apple Silicon (Metal/MPS):  install jax-mps (or current Apple wheel)
+# NVIDIA / Linux / Colab:     pip install -U "jax[cuda]"  # see JAX install docs
+```
+
+```bash
+uv run python -c "from graphnet_automata.jax_core import warmup; print(warmup())"
+```
+
+### Run the synth harness
+
+```bash
+uv run python -m graphnet_automata.bayesian_synth --n 10
+uv run python -m graphnet_automata.bayesian_synth --n 10 --seeds 10
+uv run python -m graphnet_automata.bayesian_synth --n 50
+uv run python -m graphnet_automata.bayesian_synth --n 50 --backend jax
+```
+
+Reports directed/skeleton TP·FP·FN, F1, and ticks/sec. NumPy remains the default backend.
+
 ## Requirements
 
 * Python 3.10+
 * Managed via [uv](https://docs.astral.sh/uv/)
 
-Core libraries: NetworkX, NumPy, SciPy, Numba, python-louvain, Matplotlib, h5py, Optuna.
+Core libraries: NetworkX, NumPy, SciPy, Numba, python-louvain, Matplotlib, h5py, Optuna. Optional: JAX (`--extra jax` or an accelerator wheel).
 
 ## Installation
 
@@ -88,20 +134,6 @@ uv sync --extra dev --extra viz   # notebooks / pyvis
 uv sync --extra app               # Streamlit demo
 uv sync --extra docs              # Sphinx documentation
 uv sync --extra jax               # CPU JAX for bayesian CA (`jax_core`)
-```
-
-### Running on GPU
-
-The Bayesian CA JAX port (`graphnet_automata.jax_core`) uses plain `jax` / `jax.numpy` with no hardcoded backend. Install an accelerator build for your machine **instead of or in addition to** the CPU `--extra jax` wheels:
-
-* **Apple Silicon (Metal/MPS):** install [`jax-mps`](https://pypi.org/project/jax-mps/) (or the current Apple-Silicon JAX wheel from the JAX install docs).
-* **NVIDIA / Linux / Colab:** install CUDA-enabled JAX, e.g. `pip install -U "jax[cuda]"` (see [JAX installation](https://jax.readthedocs.io/en/latest/installation.html) for the matching CUDA index).
-
-Verify the device, then run the scale harness on JAX:
-
-```bash
-uv run python -c "from graphnet_automata.jax_core import warmup; print(warmup())"
-uv run python -m graphnet_automata.bayesian_synth --n 50 --backend jax
 ```
 
 ## Streamlit demo

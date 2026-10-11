@@ -18,7 +18,6 @@ Run::
 from __future__ import annotations
 
 import argparse
-import platform
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -382,7 +381,6 @@ def run_phase2(
 
     metrics_init = edge_metrics(A, A_true)
     sk_init = skeleton_metrics(A, A_true)
-    history = [metrics_init]
     A_init = A.copy()
     E_init = E.copy()
 
@@ -398,6 +396,7 @@ def run_phase2(
             k=k,
         )
 
+    # Time only CA steps (metrics scored after the loop).
     t0 = time.perf_counter()
     for _ in range(ticks):
         A, E = step_fn(
@@ -409,9 +408,9 @@ def run_phase2(
             threshold_birth=threshold_birth,
             k=k,
         )
-        history.append(edge_metrics(A, A_true))
     elapsed = time.perf_counter() - t0
 
+    metrics_final = edge_metrics(A, A_true)
     return Phase2Result(
         A_true=A_true,
         A_init=A_init,
@@ -420,11 +419,11 @@ def run_phase2(
         E_final=E,
         Cov=Cov,
         metrics_init=metrics_init,
-        metrics_final=history[-1],
+        metrics_final=metrics_final,
         skeleton_init=sk_init,
         skeleton_final=skeleton_metrics(A, A_true),
         ticks=ticks,
-        history=history,
+        history=[metrics_init, metrics_final],
         seed=seed,
         n=n,
         truth_edges=truth_edges,
@@ -435,46 +434,32 @@ def run_phase2(
 
 
 def report(result: Phase2Result) -> str:
-    """Multi-line human-readable summary for stdout / pytest ``-s``."""
+    """Concise CLI summary: recovery metrics + throughput."""
     m0, m1 = result.metrics_init, result.metrics_final
-    s0, s1 = result.skeleton_init, result.skeleton_final
-    edge_cap = 40 if result.n > 10 else None
+    s1 = result.skeleton_final
     lines = [
         "=== Synthetic Bayesian CA ===",
         f"seed={result.seed}  N={result.n}  ticks={result.ticks}  "
         f"true_edges={len(result.truth_edges)}  "
         f"backend={result.backend}  device={result.device}",
         f"Ground-truth edges ({m1.true_edges}): "
-        f"{format_edges(result.A_true, max_edges=edge_cap)}",
-        f"Init A edges ({m0.pred_edges}): "
-        f"{format_edges(result.A_init, max_edges=edge_cap)}",
+        f"{format_edges(result.A_true, max_edges=24)}",
         f"Init directed:  TP={m0.tp} FP={m0.fp} FN={m0.fn}  "
-        f"P={m0.precision:.2f} R={m0.recall:.2f} F1={m0.f1:.2f}",
-        f"Init skeleton:  TP={s0.tp} FP={s0.fp} FN={s0.fn}  "
-        f"P={s0.precision:.2f} R={s0.recall:.2f} F1={s0.f1:.2f}",
-        f"Final A edges ({m1.pred_edges}): "
-        f"{format_edges(result.A_final, max_edges=edge_cap)}",
+        f"P={m0.precision:.2f} R={m0.recall:.2f} F1={m0.f1:.2f}  "
+        f"(pred_edges={m0.pred_edges})",
         f"Final directed: TP={m1.tp} FP={m1.fp} FN={m1.fn}  "
-        f"P={m1.precision:.2f} R={m1.recall:.2f} F1={m1.f1:.2f}",
+        f"P={m1.precision:.2f} R={m1.recall:.2f} F1={m1.f1:.2f}  "
+        f"(pred_edges={m1.pred_edges})",
         f"Final skeleton: TP={s1.tp} FP={s1.fp} FN={s1.fn}  "
         f"P={s1.precision:.2f} R={s1.recall:.2f} F1={s1.f1:.2f}",
-        f"Noise prune ΔFP (directed): {m0.fp} → {m1.fp} ({m1.fp - m0.fp:+d})",
         f"Wall time (step loop): {result.elapsed_sec:.4f}s  "
         f"ticks/s={result.ticks_per_sec:.2f}",
     ]
     if result.n <= 10:
-        lines.append(f"E_init:  {np.array2string(result.E_init, precision=3)}")
-        lines.append(f"E_final: {np.array2string(result.E_final, precision=3)}")
         lines.append("True edge status (final):")
         for i, j in result.truth_edges:
-            present = result.A_final[i, j] > 0
-            mark = "HIT" if present else "MISS"
+            mark = "HIT" if result.A_final[i, j] > 0 else "MISS"
             lines.append(f"  {_edge_label(i, j, result.n)}: {mark}")
-    else:
-        lines.append(
-            f"E range: init[{result.E_init.min():.3f}, {result.E_init.max():.3f}]  "
-            f"final[{result.E_final.min():.3f}, {result.E_final.max():.3f}]"
-        )
     return "\n".join(lines)
 
 
@@ -558,12 +543,6 @@ def main(argv: list[str] | None = None) -> int:
         k=args.k,
         target_edges=args.target_edges,
         backend=args.backend,
-    )
-
-    print(
-        f"machine: {platform.system()} {platform.release()}  "
-        f"python={platform.python_version()}  "
-        f"numpy={np.__version__}"
     )
 
     if args.seeds and args.seeds > 0:
