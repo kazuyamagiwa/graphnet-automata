@@ -59,6 +59,7 @@ See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/t
 │   ├── bayesian.py            # NumPy Bayesian CA step (DAG / CMI)
 │   ├── bayesian_synth.py      # Synthetic DAG harness (N=10 / N=50)
 │   ├── jax_core.py            # JAX @jit port of bayesian.step
+│   ├── benchmark.py           # JAX CA vs gCastle PC / NOTEARS
 │   ├── degree.py              # Degree-count kernel search
 │   ├── generate.py            # Dataset generation
 │   ├── optimize.py            # Optuna seed optimization
@@ -112,12 +113,23 @@ uv run python -m graphnet_automata.bayesian_synth --n 50 --backend jax
 
 Reports directed/skeleton TP·FP·FN, F1, and ticks/sec. NumPy remains the default backend.
 
+### Benchmark vs gCastle (PC / NOTEARS)
+
+Same N=50 linear SEM as the synth harness; compares skeleton/directed F1 and wall time.
+
+```bash
+uv sync --extra jax --extra gcastle   # gcastle pulls torch
+# or: pip install gcastle
+uv run python -m graphnet_automata.benchmark
+uv run python -m graphnet_automata.benchmark --n 50 --seed 0 --ticks 100
+```
+
 ## Requirements
 
 * Python 3.10+
 * Managed via [uv](https://docs.astral.sh/uv/)
 
-Core libraries: NetworkX, NumPy, SciPy, Numba, python-louvain, Matplotlib, h5py, Optuna. Optional: JAX (`--extra jax` or an accelerator wheel).
+Core libraries: NetworkX, NumPy, SciPy, Numba, python-louvain, Matplotlib, h5py, Optuna. Optional: JAX (`--extra jax` or an accelerator wheel), gCastle (`--extra gcastle` or `pip install gcastle`).
 
 ## Installation
 
@@ -134,6 +146,7 @@ uv sync --extra dev --extra viz   # notebooks / pyvis
 uv sync --extra app               # Streamlit demo
 uv sync --extra docs              # Sphinx documentation
 uv sync --extra jax               # CPU JAX for bayesian CA (`jax_core`)
+uv sync --extra gcastle           # PC / NOTEARS benchmark (+ torch)
 ```
 
 ## Streamlit demo
