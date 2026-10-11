@@ -87,6 +87,21 @@ Optional extras:
 uv sync --extra dev --extra viz   # notebooks / pyvis
 uv sync --extra app               # Streamlit demo
 uv sync --extra docs              # Sphinx documentation
+uv sync --extra jax               # CPU JAX for bayesian CA (`jax_core`)
+```
+
+### Running on GPU
+
+The Bayesian CA JAX port (`graphnet_automata.jax_core`) uses plain `jax` / `jax.numpy` with no hardcoded backend. Install an accelerator build for your machine **instead of or in addition to** the CPU `--extra jax` wheels:
+
+* **Apple Silicon (Metal/MPS):** install [`jax-mps`](https://pypi.org/project/jax-mps/) (or the current Apple-Silicon JAX wheel from the JAX install docs).
+* **NVIDIA / Linux / Colab:** install CUDA-enabled JAX, e.g. `pip install -U "jax[cuda]"` (see [JAX installation](https://jax.readthedocs.io/en/latest/installation.html) for the matching CUDA index).
+
+Verify the device, then run the scale harness on JAX:
+
+```bash
+uv run python -c "from graphnet_automata.jax_core import warmup; print(warmup())"
+uv run python -m graphnet_automata.bayesian_synth --n 50 --backend jax
 ```
 
 ## Streamlit demo

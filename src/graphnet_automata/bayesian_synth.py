@@ -11,6 +11,7 @@ Run::
     uv run python -m graphnet_automata.bayesian_synth
     uv run python -m graphnet_automata.bayesian_synth --seeds 10
     uv run python -m graphnet_automata.bayesian_synth --n 50
+    uv run python -m graphnet_automata.bayesian_synth --n 50 --backend jax
     uv run pytest tests/test_bayesian_phase2.py -s
 """
 
@@ -20,10 +21,11 @@ import argparse
 import platform
 import time
 from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
 
-from graphnet_automata.bayesian import step
+from graphnet_automata.bayesian import step as numpy_step
 
 # ---------------------------------------------------------------------------
 # Phase-2 N=10 ground truth (fixed motifs; kept for tests / default CLI)
@@ -281,10 +283,37 @@ class Phase2Result:
     n: int = N
     truth_edges: tuple[tuple[int, int], ...] = TRUTH_EDGES
     elapsed_sec: float = 0.0
+    backend: str = "numpy"
+    device: str = "numpy"
 
     @property
     def ticks_per_sec(self) -> float:
         return self.ticks / self.elapsed_sec if self.elapsed_sec > 0 else float("inf")
+
+
+def _resolve_step(backend: str) -> tuple[Callable, str]:
+    """Return ``(step_fn, device_label)`` for ``numpy`` or ``jax``."""
+    if backend == "numpy":
+        return numpy_step, "numpy"
+    if backend == "jax":
+        from graphnet_automata.jax_core import device_info, step as jax_step
+
+        def _step(A, E, Cov, **kwargs):
+            import jax.numpy as jnp
+
+            A1, E1 = jax_step(
+                jnp.asarray(A),
+                jnp.asarray(E),
+                jnp.asarray(Cov),
+                learning_rate=kwargs.get("learning_rate", 0.1),
+                threshold_death=kwargs.get("threshold_death", 0.05),
+                threshold_birth=kwargs.get("threshold_birth", 0.15),
+                k=kwargs.get("k", 2),
+            )
+            return np.asarray(A1), np.asarray(E1)
+
+        return _step, device_info()
+    raise ValueError(f"Unknown backend {backend!r}; use 'numpy' or 'jax'")
 
 
 def _default_edge_prob(n: int) -> float:
@@ -326,6 +355,7 @@ def run_phase2(
     k: int = 3,
     seed: int = 0,
     target_edges: int | None = None,
+    backend: str = "numpy",
 ) -> Phase2Result:
     """Generate data, init state, loop ``step`` (timed), return artifacts."""
     rng = np.random.default_rng(seed)
@@ -335,6 +365,7 @@ def run_phase2(
         edge_prob = _default_edge_prob(n)
     if weight is None:
         weight = _default_weight(n)
+    step_fn, device = _resolve_step(backend)
 
     # Dedicated RNG stream for DAG construction so init A/E stay reproducible.
     dag_rng = np.random.default_rng(seed + 17_389)
@@ -355,9 +386,21 @@ def run_phase2(
     A_init = A.copy()
     E_init = E.copy()
 
+    # Warmup JIT outside the timed window (no-op for NumPy).
+    if backend == "jax" and ticks > 0:
+        step_fn(
+            A,
+            E,
+            Cov,
+            learning_rate=learning_rate,
+            threshold_death=threshold_death,
+            threshold_birth=threshold_birth,
+            k=k,
+        )
+
     t0 = time.perf_counter()
     for _ in range(ticks):
-        A, E = step(
+        A, E = step_fn(
             A,
             E,
             Cov,
@@ -386,6 +429,8 @@ def run_phase2(
         n=n,
         truth_edges=truth_edges,
         elapsed_sec=elapsed,
+        backend=backend,
+        device=device,
     )
 
 
@@ -397,7 +442,8 @@ def report(result: Phase2Result) -> str:
     lines = [
         "=== Synthetic Bayesian CA ===",
         f"seed={result.seed}  N={result.n}  ticks={result.ticks}  "
-        f"true_edges={len(result.truth_edges)}",
+        f"true_edges={len(result.truth_edges)}  "
+        f"backend={result.backend}  device={result.device}",
         f"Ground-truth edges ({m1.true_edges}): "
         f"{format_edges(result.A_true, max_edges=edge_cap)}",
         f"Init A edges ({m0.pred_edges}): "
@@ -492,6 +538,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="True-edge count for n!=10 sparse DAGs (default ~62 for n=50).",
     )
+    parser.add_argument(
+        "--backend",
+        choices=("numpy", "jax"),
+        default="numpy",
+        help="CA step backend (jax requires --extra jax or an accelerator wheel).",
+    )
     args = parser.parse_args(argv)
 
     kwargs = dict(
@@ -505,6 +557,7 @@ def main(argv: list[str] | None = None) -> int:
         threshold_birth=args.threshold_birth,
         k=args.k,
         target_edges=args.target_edges,
+        backend=args.backend,
     )
 
     print(
