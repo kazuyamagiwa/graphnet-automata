@@ -50,24 +50,30 @@ class BenchRow:
     notes: str = ""
 
 
+def _p(*args, **kwargs) -> None:
+    """Print with flush so device notes appear promptly under pipes/tee."""
+    kwargs.setdefault("flush", True)
+    print(*args, **kwargs)
+
+
 def print_device_checks() -> dict:
     """Print JAX / PyTorch device availability; return a small summary dict."""
     info: dict = {"torch_cuda": False, "jax_backend": "unavailable", "jax_devices": []}
 
-    print("=== Device checks ===")
+    _p("=== Device checks ===")
     try:
         import torch
 
         cuda = bool(torch.cuda.is_available())
         info["torch_cuda"] = cuda
-        print(f"torch.cuda.is_available(): {cuda}")
+        _p(f"torch.cuda.is_available(): {cuda}")
         if cuda:
-            print(f"torch.cuda.device_count(): {torch.cuda.device_count()}")
-            print(f"torch.cuda.get_device_name(0): {torch.cuda.get_device_name(0)}")
+            _p(f"torch.cuda.device_count(): {torch.cuda.device_count()}")
+            _p(f"torch.cuda.get_device_name(0): {torch.cuda.get_device_name(0)}")
         else:
-            print("torch: CUDA not available (CPU)")
+            _p("torch: CUDA not available (CPU)")
     except ImportError as exc:
-        print(f"torch: not installed ({exc})")
+        _p(f"torch: not installed ({exc})")
 
     try:
         import jax
@@ -76,13 +82,13 @@ def print_device_checks() -> dict:
 
         info["jax_backend"] = jax.default_backend()
         info["jax_devices"] = [str(d) for d in jax.devices()]
-        print(f"jax.default_backend(): {info['jax_backend']}")
-        print(f"jax.devices(): {info['jax_devices']}")
-        print(f"jax_core.device_info(): {device_info()}")
+        _p(f"jax.default_backend(): {info['jax_backend']}")
+        _p(f"jax.devices(): {info['jax_devices']}")
+        _p(f"jax_core.device_info(): {device_info()}")
     except ImportError as exc:
-        print(f"jax: not installed ({exc})")
+        _p(f"jax: not installed ({exc})")
 
-    print()
+    _p()
     return info
 
 
@@ -156,22 +162,22 @@ def _notears_kwargs(
     if "device_type" in params:
         device_type = "gpu" if want_gpu else "cpu"
         if want_gpu:
-            print("NOTEARS: passing device_type='gpu'")
+            _p("NOTEARS: passing device_type='gpu'")
         else:
-            print("NOTEARS: passing device_type='cpu' (CUDA unavailable)")
+            _p("NOTEARS: passing device_type='cpu' (CUDA unavailable)")
         kwargs["device_type"] = device_type
         note = f"lambda1={lambda1} w_threshold={w_threshold} max_iter={max_iter} device_type={device_type}"
         return kwargs, note
 
     # gcastle linear Notears is SciPy/CPU-only in current releases.
     if want_gpu:
-        print(
+        _p(
             "NOTEARS: castle.algorithms.Notears has no device_type in this gcastle "
             "build (linear SciPy solver) — falling back to CPU. "
             "NotearsNonlinear supports device_type='gpu' if you need a GPU path."
         )
     else:
-        print("NOTEARS: linear solver (CPU); no device_type in this gcastle build")
+        _p("NOTEARS: linear solver (CPU); no device_type in this gcastle build")
     note = (
         f"lambda1={lambda1} w_threshold={w_threshold} max_iter={max_iter} "
         "device=cpu(linear/scipy)"
@@ -364,16 +370,16 @@ def main(argv: list[str] | None = None) -> int:
         k=args.k,
         n_samples=args.samples,
     )
-    print(
+    _p(
         f"N={bundle.n}  seed={bundle.seed}  samples={bundle.X.shape[0]}  "
         f"true_edges={len(bundle.truth_edges)}"
     )
-    print()
-    print(markdown_table(rows))
-    print()
-    print("Details:")
+    _p()
+    _p(markdown_table(rows))
+    _p()
+    _p("Details:")
     for r in rows:
-        print(
+        _p(
             f"- {r.algorithm}: dir TP/FP/FN={r.directed_tp}/{r.directed_fp}/{r.directed_fn}  "
             f"skel TP/FP/FN={r.skeleton_tp}/{r.skeleton_fp}/{r.skeleton_fn}  "
             f"({r.notes})"
