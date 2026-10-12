@@ -1,4 +1,4 @@
-"""Benchmark JAX Bayesian CA vs gCastle PC / NOTEARS.
+"""Benchmark JAX Bayesian CA vs gCastle PC / GOLEM.
 
 Default scale is **N=100** (same SEM helpers as :mod:`bayesian_synth`).
 
@@ -15,12 +15,14 @@ Run::
 
     uv run python -m graphnet_automata.benchmark
     uv run python -m graphnet_automata.benchmark --n 100 --seed 0 --ticks 100
+
+    # CPU / no-GPU smoke (import + GOLEM init only; no invented GPU timings):
+    uv run python -m graphnet_automata.benchmark --smoke
 """
 
 from __future__ import annotations
 
 import argparse
-import inspect
 import logging
 import time
 from dataclasses import dataclass
@@ -94,7 +96,7 @@ def print_device_checks() -> dict:
 
 def _require_gcastle():
     try:
-        from castle.algorithms import Notears, PC
+        from castle.algorithms import GOLEM, PC
     except ImportError as exc:  # pragma: no cover - env-dependent
         raise SystemExit(
             "gcastle is required for this benchmark.\n"
@@ -102,7 +104,38 @@ def _require_gcastle():
             "  # or: pip install gcastle\n"
             f"Import error: {exc}"
         ) from exc
-    return PC, Notears
+    return PC, GOLEM
+
+
+def _cuda_available() -> bool:
+    try:
+        import torch
+
+        return bool(torch.cuda.is_available())
+    except ImportError:
+        return False
+
+
+def resolve_golem_device_type(*, want_gpu: bool | None = None) -> str:
+    """Pick GOLEM ``device_type`` without crashing when CUDA is absent.
+
+    gCastle's GOLEM raises ``ValueError`` if ``device_type='gpu'`` and
+    ``torch.cuda.is_available()`` is False — so we only request GPU when CUDA
+    is actually present.
+    """
+    if want_gpu is None:
+        want_gpu = _cuda_available()
+    if want_gpu and _cuda_available():
+        _p("GOLEM: passing device_type='gpu'")
+        return "gpu"
+    if want_gpu and not _cuda_available():
+        _p(
+            "GOLEM: CUDA unavailable — falling back to device_type='cpu' "
+            "(gCastle GOLEM raises ValueError if device_type='gpu' without CUDA)."
+        )
+        return "cpu"
+    _p("GOLEM: passing device_type='cpu' (CUDA unavailable)")
+    return "cpu"
 
 
 def _as_binary_adj(mat) -> np.ndarray:
@@ -143,80 +176,37 @@ def run_pc(X: np.ndarray, A_true: np.ndarray, *, alpha: float = 0.05) -> BenchRo
     )
 
 
-def _notears_kwargs(
-    *,
-    lambda1: float,
-    w_threshold: float,
-    max_iter: int,
-    want_gpu: bool,
-) -> tuple[dict, str]:
-    """Build Notears constructor kwargs; honor ``device_type`` when supported."""
-    _, Notears = _require_gcastle()
-    kwargs: dict = {
-        "lambda1": lambda1,
-        "loss_type": "l2",
-        "max_iter": max_iter,
-        "w_threshold": w_threshold,
-    }
-    params = inspect.signature(Notears.__init__).parameters
-    if "device_type" in params:
-        device_type = "gpu" if want_gpu else "cpu"
-        if want_gpu:
-            _p("NOTEARS: passing device_type='gpu'")
-        else:
-            _p("NOTEARS: passing device_type='cpu' (CUDA unavailable)")
-        kwargs["device_type"] = device_type
-        note = f"lambda1={lambda1} w_threshold={w_threshold} max_iter={max_iter} device_type={device_type}"
-        return kwargs, note
-
-    # gcastle linear Notears is SciPy/CPU-only in current releases.
-    if want_gpu:
-        _p(
-            "NOTEARS: castle.algorithms.Notears has no device_type in this gcastle "
-            "build (linear SciPy solver) — falling back to CPU. "
-            "NotearsNonlinear supports device_type='gpu' if you need a GPU path."
-        )
-    else:
-        _p("NOTEARS: linear solver (CPU); no device_type in this gcastle build")
-    note = (
-        f"lambda1={lambda1} w_threshold={w_threshold} max_iter={max_iter} "
-        "device=cpu(linear/scipy)"
-    )
-    return kwargs, note
-
-
-def run_notears(
+def run_golem(
     X: np.ndarray,
     A_true: np.ndarray,
     *,
-    lambda1: float = 0.1,
-    w_threshold: float = 0.3,
-    max_iter: int = 100,
+    lambda_1: float = 0.02,
+    lambda_2: float = 5.0,
+    num_iter: int = 100_000,
+    graph_thres: float = 0.3,
     want_gpu: bool | None = None,
 ) -> BenchRow:
-    _, Notears = _require_gcastle()
-    if want_gpu is None:
-        try:
-            import torch
-
-            want_gpu = bool(torch.cuda.is_available())
-        except ImportError:
-            want_gpu = False
-
-    kwargs, note = _notears_kwargs(
-        lambda1=lambda1,
-        w_threshold=w_threshold,
-        max_iter=max_iter,
-        want_gpu=want_gpu,
+    """Run gCastle GOLEM (PyTorch); prefer GPU when CUDA is available."""
+    _, GOLEM = _require_gcastle()
+    device_type = resolve_golem_device_type(want_gpu=want_gpu)
+    note = (
+        f"lambda_1={lambda_1} lambda_2={lambda_2} num_iter={num_iter} "
+        f"graph_thres={graph_thres} device_type={device_type}"
     )
     t0 = time.perf_counter()
-    nt = Notears(**kwargs)
-    nt.learn(X)
+    model = GOLEM(
+        lambda_1=lambda_1,
+        lambda_2=lambda_2,
+        num_iter=num_iter,
+        graph_thres=graph_thres,
+        device_type=device_type,
+    )
+    model.learn(X)
     elapsed = time.perf_counter() - t0
-    A_pred = _as_binary_adj(nt.causal_matrix)
+    A_pred = _as_binary_adj(model.causal_matrix)
     d, s = _score(A_pred, A_true)
     return BenchRow(
-        algorithm="NOTEARS (gcastle)",
+        algorithm="GOLEM (gcastle)",
         skeleton_f1=s.f1,
         directed_f1=d.f1,
         wall_time_s=elapsed,
@@ -228,6 +218,22 @@ def run_notears(
         skeleton_fn=s.fn,
         notes=note,
     )
+
+
+def smoke_golem_init() -> None:
+    """Import/init GOLEM without ``learn`` — for CPU VMs / CI smoke tests."""
+    _, GOLEM = _require_gcastle()
+    device_type = resolve_golem_device_type()
+    model = GOLEM(device_type=device_type, num_iter=10, checkpoint_iter=5)
+    _p(f"GOLEM smoke init OK: device={model.device} device_type={model.device_type}")
+
+    # Document gCastle's hard fail if callers pass gpu blindly.
+    if not _cuda_available():
+        try:
+            GOLEM(device_type="gpu", num_iter=1)
+            _p("GOLEM(device_type='gpu') unexpectedly succeeded without CUDA")
+        except ValueError as exc:
+            _p(f"GOLEM(device_type='gpu') without CUDA raises ValueError (expected): {exc}")
 
 
 def run_jax_ca(
@@ -315,18 +321,14 @@ def run_benchmark(
     ticks: int = 100,
     k: int = 3,
     n_samples: int | None = None,
+    golem_iters: int = 100_000,
 ) -> tuple[list[BenchRow], SyntheticBundle]:
     bundle = prepare_synthetic_bundle(n=n, seed=seed, n_samples=n_samples)
-    try:
-        import torch
-
-        want_gpu = bool(torch.cuda.is_available())
-    except ImportError:
-        want_gpu = False
+    want_gpu = _cuda_available()
 
     rows = [
         run_pc(bundle.X, bundle.A_true),
-        run_notears(bundle.X, bundle.A_true, want_gpu=want_gpu),
+        run_golem(bundle.X, bundle.A_true, want_gpu=want_gpu, num_iter=golem_iters),
         run_jax_ca(
             bundle.Cov,
             bundle.A_init,
@@ -356,6 +358,17 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Override sample count (default: synth helper, 200*n for n>10).",
     )
+    parser.add_argument(
+        "--golem-iters",
+        type=int,
+        default=100_000,
+        help="GOLEM num_iter (default 100000, matching gCastle).",
+    )
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="Device checks + GOLEM import/init only (no full learn / no timings).",
+    )
     args = parser.parse_args(argv)
 
     logging.getLogger("castle").setLevel(logging.WARNING)
@@ -363,12 +376,25 @@ def main(argv: list[str] | None = None) -> int:
 
     print_device_checks()
     _require_gcastle()
+
+    if args.smoke:
+        smoke_golem_init()
+        _p()
+        _p(
+            "Smoke complete (no GOLEM.learn / no F1 table). "
+            "For Colab T4 full numbers:"
+        )
+        _p('  pip install -U "jax[cuda13]" gcastle torch')
+        _p("  python -m graphnet_automata.benchmark --n 100")
+        return 0
+
     rows, bundle = run_benchmark(
         n=args.n,
         seed=args.seed,
         ticks=args.ticks,
         k=args.k,
         n_samples=args.samples,
+        golem_iters=args.golem_iters,
     )
     _p(
         f"N={bundle.n}  seed={bundle.seed}  samples={bundle.X.shape[0]}  "
