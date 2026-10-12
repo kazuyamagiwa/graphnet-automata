@@ -1,6 +1,7 @@
 """Benchmark JAX Bayesian CA vs gCastle PC / GOLEM.
 
 Default scale is **N=100** (same SEM helpers as :mod:`bayesian_synth`).
+GOLEM default budget is ``num_iter=20000`` (no early-stop in gCastle).
 
 Install::
 
@@ -176,31 +177,60 @@ def run_pc(X: np.ndarray, A_true: np.ndarray, *, alpha: float = 0.05) -> BenchRo
     )
 
 
+# Benchmark-tuned GOLEM-EV defaults (gCastle has no early-stop / tol knobs).
+# num_iter=20000: loss typically plateaus by ~15k under the prior 100k budget.
+GOLEM_DEFAULT_KWARGS = {
+    "lambda_1": 0.02,
+    "lambda_2": 5.0,
+    "equal_variances": True,
+    "learning_rate": 1e-3,
+    "num_iter": 20_000,
+    "checkpoint_iter": 5_000,
+    "seed": 1,
+    "graph_thres": 0.3,
+}
+
+
 def run_golem(
     X: np.ndarray,
     A_true: np.ndarray,
     *,
-    lambda_1: float = 0.02,
-    lambda_2: float = 5.0,
-    num_iter: int = 100_000,
-    graph_thres: float = 0.3,
+    lambda_1: float = GOLEM_DEFAULT_KWARGS["lambda_1"],
+    lambda_2: float = GOLEM_DEFAULT_KWARGS["lambda_2"],
+    equal_variances: bool = GOLEM_DEFAULT_KWARGS["equal_variances"],
+    learning_rate: float = GOLEM_DEFAULT_KWARGS["learning_rate"],
+    num_iter: int = GOLEM_DEFAULT_KWARGS["num_iter"],
+    checkpoint_iter: int = GOLEM_DEFAULT_KWARGS["checkpoint_iter"],
+    seed: int = GOLEM_DEFAULT_KWARGS["seed"],
+    graph_thres: float = GOLEM_DEFAULT_KWARGS["graph_thres"],
     want_gpu: bool | None = None,
 ) -> BenchRow:
-    """Run gCastle GOLEM (PyTorch); prefer GPU when CUDA is available."""
+    """Run gCastle GOLEM (PyTorch); prefer GPU when CUDA is available.
+
+    gCastle GOLEM exposes no early-stopping / tolerance parameters — training
+    always runs a fixed ``num_iter`` Adam loop (``checkpoint_iter`` only logs).
+    """
     _, GOLEM = _require_gcastle()
     device_type = resolve_golem_device_type(want_gpu=want_gpu)
+    kwargs = {
+        "lambda_1": lambda_1,
+        "lambda_2": lambda_2,
+        "equal_variances": equal_variances,
+        "learning_rate": learning_rate,
+        "num_iter": num_iter,
+        "checkpoint_iter": checkpoint_iter,
+        "seed": seed,
+        "graph_thres": graph_thres,
+        "device_type": device_type,
+    }
+    # Defensible Details line: full kwargs + explicit no-early-stop note.
     note = (
-        f"lambda_1={lambda_1} lambda_2={lambda_2} num_iter={num_iter} "
-        f"graph_thres={graph_thres} device_type={device_type}"
+        " ".join(f"{k}={v}" for k, v in kwargs.items())
+        + " early_stop=absent(gcastle)"
     )
+    _p(f"GOLEM kwargs: {note}")
     t0 = time.perf_counter()
-    model = GOLEM(
-        lambda_1=lambda_1,
-        lambda_2=lambda_2,
-        num_iter=num_iter,
-        graph_thres=graph_thres,
-        device_type=device_type,
-    )
+    model = GOLEM(**kwargs)
     model.learn(X)
     elapsed = time.perf_counter() - t0
     A_pred = _as_binary_adj(model.causal_matrix)
@@ -321,7 +351,7 @@ def run_benchmark(
     ticks: int = 100,
     k: int = 3,
     n_samples: int | None = None,
-    golem_iters: int = 100_000,
+    golem_iters: int = GOLEM_DEFAULT_KWARGS["num_iter"],
 ) -> tuple[list[BenchRow], SyntheticBundle]:
     bundle = prepare_synthetic_bundle(n=n, seed=seed, n_samples=n_samples)
     want_gpu = _cuda_available()
@@ -361,8 +391,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--golem-iters",
         type=int,
-        default=100_000,
-        help="GOLEM num_iter (default 100000, matching gCastle).",
+        default=GOLEM_DEFAULT_KWARGS["num_iter"],
+        help=(
+            "GOLEM num_iter (default 20000; gCastle has no early-stop/tol — "
+            "fixed Adam budget only)."
+        ),
     )
     parser.add_argument(
         "--smoke",

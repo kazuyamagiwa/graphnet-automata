@@ -119,7 +119,7 @@ Then from the repo (or after `pip install -e .`):
 python -m graphnet_automata.benchmark --n 100
 ```
 
-The benchmark prints device checks at startup (`torch.cuda.is_available()`, `jax.default_backend()`, `jax.devices()`). For **GOLEM** it passes `device_type='gpu'` only when CUDA is available; otherwise it falls back to `device_type='cpu'` with a printed note (gCastle raises `ValueError` if you request GPU without CUDA). On CPU-only hosts use `--smoke` to verify import/init without a full `GOLEM.learn` (default `num_iter=100000`).
+The benchmark prints device checks at startup (`torch.cuda.is_available()`, `jax.default_backend()`, `jax.devices()`). For **GOLEM** it passes `device_type='gpu'` only when CUDA is available; otherwise it falls back to `device_type='cpu'` with a printed note (gCastle raises `ValueError` if you request GPU without CUDA). Default GOLEM budget is **`num_iter=20000`** (GOLEM-EV: `lambda_1=0.02`, `lambda_2=5.0`, `equal_variances=True`, `learning_rate=1e-3`, `graph_thres=0.3`); the Details line prints the full kwargs. **gCastle GOLEM has no early-stopping / tolerance parameters** — only a fixed Adam loop plus `checkpoint_iter` logging. On CPU-only hosts use `--smoke` to verify import/init without a full `GOLEM.learn`.
 
 ### Run the synth harness
 
@@ -143,6 +143,7 @@ uv sync --extra jax --extra gcastle   # CPU wheels; gcastle pulls torch
 uv run python -m graphnet_automata.benchmark
 uv run python -m graphnet_automata.benchmark --n 100 --seed 0 --ticks 100
 uv run python -m graphnet_automata.benchmark --n 50   # smaller scale
+uv run python -m graphnet_automata.benchmark --golem-iters 20000  # default
 uv run python -m graphnet_automata.benchmark --smoke  # CPU: import/init only
 ```
 
