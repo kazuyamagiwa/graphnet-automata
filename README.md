@@ -59,7 +59,7 @@ See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/t
 │   ├── bayesian.py            # NumPy Bayesian CA step (DAG / CMI)
 │   ├── bayesian_synth.py      # Synthetic DAG harness (N=10 / 50 / 100)
 │   ├── jax_core.py            # JAX @jit port of bayesian.step
-│   ├── benchmark.py           # JAX CA vs gCastle PC / NOTEARS (default N=100)
+│   ├── benchmark.py           # JAX CA vs gCastle PC / GOLEM (default N=100)
 │   ├── degree.py              # Degree-count kernel search
 │   ├── generate.py            # Dataset generation
 │   ├── optimize.py            # Optuna seed optimization
@@ -119,7 +119,7 @@ Then from the repo (or after `pip install -e .`):
 python -m graphnet_automata.benchmark --n 100
 ```
 
-The benchmark prints device checks at startup (`torch.cuda.is_available()`, `jax.default_backend()`, `jax.devices()`). For NOTEARS it passes `device_type='gpu'` when the gCastle API supports it and CUDA is available; otherwise it falls back to CPU with a printed note. Linear `Notears` in current gcastle is SciPy/CPU-only — `NotearsNonlinear` is the GPU-capable path if needed.
+The benchmark prints device checks at startup (`torch.cuda.is_available()`, `jax.default_backend()`, `jax.devices()`). For **GOLEM** it passes `device_type='gpu'` only when CUDA is available; otherwise it falls back to `device_type='cpu'` with a printed note (gCastle raises `ValueError` if you request GPU without CUDA). On CPU-only hosts use `--smoke` to verify import/init without a full `GOLEM.learn` (default `num_iter=100000`).
 
 ### Run the synth harness
 
@@ -133,9 +133,9 @@ uv run python -m graphnet_automata.bayesian_synth --n 100
 
 Reports directed/skeleton TP·FP·FN, F1, and ticks/sec. NumPy remains the default backend. For `n >= 100`, the SEM targets roughly **100–150** true edges.
 
-### Benchmark vs gCastle (PC / NOTEARS)
+### Benchmark vs gCastle (PC / GOLEM)
 
-Default **N=100** (same SEM helpers as the synth harness; ~100–150 true edges). Compares skeleton/directed F1 and wall time. Prints JAX/PyTorch device checks first.
+Default **N=100** (same SEM helpers as the synth harness; ~100–150 true edges). Compares skeleton/directed F1 and wall time for **PC** (constraint baseline), **GOLEM** (gradient, GPU-capable), and **Bayesian CA (JAX)**. Prints JAX/PyTorch device checks first.
 
 ```bash
 uv sync --extra jax --extra gcastle   # CPU wheels; gcastle pulls torch
@@ -143,6 +143,7 @@ uv sync --extra jax --extra gcastle   # CPU wheels; gcastle pulls torch
 uv run python -m graphnet_automata.benchmark
 uv run python -m graphnet_automata.benchmark --n 100 --seed 0 --ticks 100
 uv run python -m graphnet_automata.benchmark --n 50   # smaller scale
+uv run python -m graphnet_automata.benchmark --smoke  # CPU: import/init only
 ```
 
 ## Requirements
@@ -167,7 +168,7 @@ uv sync --extra dev --extra viz   # notebooks / pyvis
 uv sync --extra app               # Streamlit demo
 uv sync --extra docs              # Sphinx documentation
 uv sync --extra jax               # CPU JAX for bayesian CA (`jax_core`)
-uv sync --extra gcastle           # PC / NOTEARS benchmark (+ torch)
+uv sync --extra gcastle           # PC / GOLEM benchmark (+ torch)
 ```
 
 ## Streamlit demo
