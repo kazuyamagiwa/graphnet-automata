@@ -37,8 +37,11 @@ docs = [
     "sphinx-autodoc-typehints>=2.0",
     "sphinx-rtd-theme>=2.0",
 ]
-# CPU wheels only. For accelerators install a platform wheel separately
-# (see README "Running on GPU"): jax-mps on Apple Silicon, or jax[cuda] on NVIDIA.
+# CPU wheels only so installs stay portable. For accelerators, install a
+# platform wheel separately (see README "Colab T4 / CUDA"): e.g.
+#   pip install -U "jax[cuda13]"   # NVIDIA / Colab
+#   # Apple Silicon: jax-mps or current Metal wheel
+# Do not hardcode Mac-only or CUDA-only paths into these extras.
 jax = [
     "jax>=0.4.30",
     "jaxlib>=0.4.30",

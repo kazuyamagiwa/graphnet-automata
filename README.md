@@ -57,9 +57,9 @@ See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/t
 ├── src/graphnet_automata/     # Installable package (uv src layout)
 │   ├── generator.py           # Shared topological CA core
 │   ├── bayesian.py            # NumPy Bayesian CA step (DAG / CMI)
-│   ├── bayesian_synth.py      # Synthetic DAG harness (N=10 / N=50)
+│   ├── bayesian_synth.py      # Synthetic DAG harness (N=10 / 50 / 100)
 │   ├── jax_core.py            # JAX @jit port of bayesian.step
-│   ├── benchmark.py           # JAX CA vs gCastle PC / NOTEARS
+│   ├── benchmark.py           # JAX CA vs gCastle PC / NOTEARS (default N=100)
 │   ├── degree.py              # Degree-count kernel search
 │   ├── generate.py            # Dataset generation
 │   ├── optimize.py            # Optuna seed optimization
@@ -93,14 +93,33 @@ On branch `experimental/bayesian-automata`, adjacency evolves by **Bayesian netw
 ### Install JAX
 
 ```bash
-uv sync --extra jax                 # CPU jax/jaxlib
-# Apple Silicon (Metal/MPS):  install jax-mps (or current Apple wheel)
-# NVIDIA / Linux / Colab:     pip install -U "jax[cuda]"  # see JAX install docs
+uv sync --extra jax                 # CPU jax/jaxlib (portable default)
+# Apple Silicon (Metal/MPS):  install jax-mps (or current Apple wheel) separately
+# NVIDIA / Colab T4:          see "Colab T4 / CUDA" below — do not rely on --extra jax alone
 ```
 
 ```bash
 uv run python -c "from graphnet_automata.jax_core import warmup; print(warmup())"
 ```
+
+### Colab T4 / CUDA
+
+`uv` extras stay CPU-friendly (`--extra jax`, `--extra gcastle`). On a Colab **T4** (or other NVIDIA GPU), install accelerator wheels separately:
+
+```bash
+# Runtime → Change runtime type → T4 GPU
+pip install -U "jax[cuda13]" gcastle torch
+# If the CUDA extra name differs for your JAX version, follow:
+#   https://docs.jax.dev/en/latest/installation.html
+```
+
+Then from the repo (or after `pip install -e .`):
+
+```bash
+python -m graphnet_automata.benchmark --n 100
+```
+
+The benchmark prints device checks at startup (`torch.cuda.is_available()`, `jax.default_backend()`, `jax.devices()`). For NOTEARS it passes `device_type='gpu'` when the gCastle API supports it and CUDA is available; otherwise it falls back to CPU with a printed note. Linear `Notears` in current gcastle is SciPy/CPU-only — `NotearsNonlinear` is the GPU-capable path if needed.
 
 ### Run the synth harness
 
@@ -109,19 +128,21 @@ uv run python -m graphnet_automata.bayesian_synth --n 10
 uv run python -m graphnet_automata.bayesian_synth --n 10 --seeds 10
 uv run python -m graphnet_automata.bayesian_synth --n 50
 uv run python -m graphnet_automata.bayesian_synth --n 50 --backend jax
+uv run python -m graphnet_automata.bayesian_synth --n 100
 ```
 
-Reports directed/skeleton TP·FP·FN, F1, and ticks/sec. NumPy remains the default backend.
+Reports directed/skeleton TP·FP·FN, F1, and ticks/sec. NumPy remains the default backend. For `n >= 100`, the SEM targets roughly **100–150** true edges.
 
 ### Benchmark vs gCastle (PC / NOTEARS)
 
-Same N=50 linear SEM as the synth harness; compares skeleton/directed F1 and wall time.
+Default **N=100** (same SEM helpers as the synth harness; ~100–150 true edges). Compares skeleton/directed F1 and wall time. Prints JAX/PyTorch device checks first.
 
 ```bash
-uv sync --extra jax --extra gcastle   # gcastle pulls torch
+uv sync --extra jax --extra gcastle   # CPU wheels; gcastle pulls torch
 # or: pip install gcastle
 uv run python -m graphnet_automata.benchmark
-uv run python -m graphnet_automata.benchmark --n 50 --seed 0 --ticks 100
+uv run python -m graphnet_automata.benchmark --n 100 --seed 0 --ticks 100
+uv run python -m graphnet_automata.benchmark --n 50   # smaller scale
 ```
 
 ## Requirements

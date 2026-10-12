@@ -63,7 +63,7 @@ def make_truth_edges(
     * ``n == 10`` — Phase-2 motif set (:data:`TRUTH_EDGES`).
     * larger ``n`` — backbone chain, periodic V-structures / colliders, then
       random forward edges until ``target_edges`` (default ~1.25·n, clipped
-      to ``[50, 75]`` when ``n >= 50``).
+      to ``[50, 75]`` for ``50 <= n < 100`` and ``[100, 150]`` for ``n >= 100``).
     """
     if n < 2:
         raise ValueError("n must be >= 2")
@@ -73,7 +73,9 @@ def make_truth_edges(
     if rng is None:
         rng = np.random.default_rng(0)
     if target_edges is None:
-        if n >= 50:
+        if n >= 100:
+            target_edges = int(np.clip(round(1.25 * n), 100, 150))
+        elif n >= 50:
             target_edges = int(np.clip(round(1.25 * n), 50, 75))
         else:
             target_edges = max(n - 1, min(n + n // 2, n * (n - 1) // 2))
