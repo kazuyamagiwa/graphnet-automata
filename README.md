@@ -49,6 +49,7 @@ See the [notebook directory](https://github.com/kazuyamagiwa/graphnet-automata/t
 ```text
 .
 ├── app.py                     # Streamlit interactive demo
+├── benchmark_results.md       # Final N=100 Colab T4 PC / GOLEM / CA table
 ├── data/                      # Generated HDF5 datasets
 ├── docs/                      # Sphinx / Read the Docs sources
 ├── images/                    # Example figures
@@ -88,7 +89,7 @@ On branch `experimental/bayesian-automata`, adjacency evolves by **Bayesian netw
 | N=10, k=3 | ~0.81 (multi-seed); seed-0 ~0.94 | F1 ~0.89 |
 | N=50 | ~0.39 | F1 ~0.73, **recall ~0.97** |
 
-**GPU (user-reported):** Tesla T4 — 100 ticks in **0.43s** (~**232** ticks/sec), parity with NumPy recovery metrics.
+**GPU (Colab Tesla T4, final N=100 benchmark):** see table below and [`benchmark_results.md`](benchmark_results.md).
 
 ### Install JAX
 
@@ -146,6 +147,25 @@ uv run python -m graphnet_automata.benchmark --n 50   # smaller scale
 uv run python -m graphnet_automata.benchmark --golem-iters 20000  # default
 uv run python -m graphnet_automata.benchmark --smoke  # CPU: import/init only
 ```
+
+#### Final results — Colab Tesla T4 (N=100, GOLEM `num_iter=20000`)
+
+Both Torch and JAX on GPU. GOLEM Details kwargs include `early_stop=absent(gcastle)`.
+
+| Algorithm | Skeleton F1 | Directed F1 | Wall Time (s) |
+| --- | ---: | ---: | ---: |
+| PC (gcastle) | 0.968 | 0.813 | 528.631 |
+| GOLEM (gcastle) | 0.577 | 0.403 | 251.182 |
+| Bayesian CA (JAX) | 0.812 | 0.483 | 0.323 |
+
+**Headline:** CA is ~**778×** vs GOLEM and ~**1636×** vs PC; skeleton **0.812 vs 0.577** and directed **0.483 vs 0.403** vs GOLEM; CA recovers **121 / 125** true edges (skeleton TP). Full write-up: [`benchmark_results.md`](benchmark_results.md).
+
+<details>
+<summary>Footnote — prior untuned GOLEM (100k iters on T4)</summary>
+
+Same SEM: GOLEM ~**1251 s**, skel F1 ~0.569, dir F1 ~0.395. Loss plateaued ~15k, so the 20k budget is the honest race setting.
+
+</details>
 
 ## Requirements
 
