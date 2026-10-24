@@ -2,7 +2,7 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kazuyamagiwa/graphnet-automata/blob/master/notebooks/ga01-odd-even-seed-bonding-communities.ipynb)
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/kazuyamagiwa/graphnet-automata/HEAD)
-[![Documentation Status](https://readthedocs.org/projects/graphnet-automata/badge/?version=latest)](https://graphnet-automata.readthedocs.io/en/latest/?badge=latest)
+[![Documentation Status](https://img.shields.io/readthedocs/graphnet-automata/latest.svg)](https://graphnet-automata.readthedocs.io/en/latest/?badge=latest)
 
 - **Colab** — open the starter notebook in Google Colab
 - **Binder** — launch a temporary JupyterLab session from this repo
