@@ -12,7 +12,7 @@
 
 Study of graph evolution using cellular automaton-like methods, packaged as a modern [uv](https://docs.astral.sh/uv/) Python project.
 
-Please also visit the sister project [causal-automata](https://github.com/kazuyamagiwa/causal-automata/pulse), which stemmed from this project and is a blazing-fast, JAX-accelerated Cellular Automaton engine for causal discovery and DAG structure learning.
+Please also visit the sister project [causal-automata](https://github.com/kazuyamagiwa/causal-automata/), which stemmed from this project and is a blazing-fast, JAX-accelerated Cellular Automaton engine for causal discovery and DAG structure learning.
 
 **Documentation:** [https://graphnet-automata.readthedocs.io/](https://graphnet-automata.readthedocs.io/)
 
